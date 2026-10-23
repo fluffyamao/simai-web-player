@@ -17,7 +17,7 @@ This project has no affiliation with SEGA. Note shapes are drawn in code; no gam
 |---|---|
 | M1 parser, taps / holds / breaks / ex / each / star heads, audio sync, seek, playback rate | done |
 | M2 slides: all standard shapes, wifi, chains, `*` multi-slides, fade-in and star motion | done |
-| M3 touch / touch hold | |
+| M3 touch / touch hold, firework burst (can be turned off) | done |
 | M4 hit effects, judge sounds, hi-speed changes | |
 
 Standard slides are built as MajdataPlay slide codes (`src/core/slideShapes.ts`); their arrow counts
@@ -28,7 +28,7 @@ are tested against the official prefab counts. Not handled yet: pseudo-each (`` 
 ```ts
 import { parseMaidata, SimaiPlayer } from 'simai-web-player'
 
-const player = new SimaiPlayer(canvas, { tapSpeed: 7.5 })
+const player = new SimaiPlayer(canvas, { tapSpeed: 7.5, touchSpeed: 7.5, fireworks: true })
 await player.load({
   maidata: parseMaidata(await (await fetch('maidata.txt')).text()),
   difficulty: 5,          // 1 Easy .. 5 Master, 6 Re:Master, 7 Utage
@@ -37,6 +37,7 @@ await player.load({
 player.play()
 player.seek(42.5)
 player.setRate(0.5)       // half speed, pitch kept
+player.setFireworks(false) // hide the burst of `f` touches
 player.onTime((t) => { /* every frame while time changes */ })
 ```
 

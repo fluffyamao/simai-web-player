@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { FreeClock, MediaClock, type Clock } from './core/clock'
 import { noteSpeedFromSetting } from './core/geometry'
+import { touchTiming, type TouchTiming } from './core/touch'
 import { parseSimai } from './parser/simai'
 import type { Chart, Maidata } from './parser/types'
 import { prepareChart, Renderer, type PreparedChart } from './render/renderer'
@@ -8,6 +9,10 @@ import { prepareChart, Renderer, type PreparedChart } from './render/renderer'
 export interface PlayerOptions {
   /** In-game tap speed setting, 1.0 .. 10.0. Default 7.5. */
   tapSpeed?: number
+  /** In-game touch speed setting. Default 7.5. */
+  touchSpeed?: number
+  /** Show the firework burst of touches marked `f`. Default true. */
+  fireworks?: boolean
 }
 
 export interface LoadOptions {
@@ -39,6 +44,8 @@ export class SimaiPlayer {
   private prepared: PreparedChart | null = null
   private _chart: Chart | null = null
   private speed: number
+  private touch: TouchTiming
+  private fireworks: boolean
   private frame = 0
   private dirty = true
   private lastTime = -1
@@ -48,6 +55,8 @@ export class SimaiPlayer {
   constructor(readonly canvas: HTMLCanvasElement, options: PlayerOptions = {}) {
     this.renderer = new Renderer(canvas)
     this.speed = noteSpeedFromSetting(options.tapSpeed ?? 7.5)
+    this.touch = touchTiming(options.touchSpeed ?? 7.5)
+    this.fireworks = options.fireworks ?? true
     this.resizeObserver = new ResizeObserver(() => {
       if (this.renderer.resize()) this.dirty = true
     })
@@ -134,6 +143,17 @@ export class SimaiPlayer {
     this.dirty = true
   }
 
+  setTouchSpeed(touchSpeed: number) {
+    this.touch = touchTiming(touchSpeed)
+    this.dirty = true
+  }
+
+  /** Show or hide the firework burst of `f` touches. */
+  setFireworks(enabled: boolean) {
+    this.fireworks = enabled
+    this.dirty = true
+  }
+
   /** Called every frame while the time changes. Returns an unsubscribe function. */
   onTime(listener: TimeListener): () => void {
     this.listeners.add(listener)
@@ -154,7 +174,11 @@ export class SimaiPlayer {
     if (!this.dirty && now === this.lastTime) return
     this.dirty = false
     this.lastTime = now
-    this.renderer.render(this.prepared, now, { speed: this.speed })
+    this.renderer.render(this.prepared, now, {
+      speed: this.speed,
+      touch: this.touch,
+      fireworks: this.fireworks,
+    })
     for (const l of this.listeners) l(now)
   }
 }

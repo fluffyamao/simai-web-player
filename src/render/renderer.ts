@@ -11,6 +11,13 @@ import {
   SPAWN_RADIUS,
   tapState,
 } from '../core/geometry'
+import {
+  TOUCH_PIECE_BASE,
+  touchPosition,
+  touchRotation,
+  touchState,
+  type TouchTiming,
+} from '../core/touch'
 import { noteEndTime } from '../parser/simai'
 import type { Chart, Note } from '../parser/types'
 import {
@@ -27,6 +34,7 @@ import {
 const VIEW_RADIUS = 5.6
 const NOTE_RADIUS = 0.58
 const HIT_EFFECT_SEC = 0.25
+const FIREWORK_SEC = 1.2
 
 export const COLORS = {
   background: '#0d1017',
@@ -39,6 +47,10 @@ export const COLORS = {
   each: '#ffcf33',
   break: '#ff8a1f',
   mine: '#7d6a8c',
+  touch: '#33b5ff',
+  /** Touch hold pieces: up, right, down, left. */
+  touchHold: ['#ffd23f', '#ff5a6e', '#3fa9ff', '#4fd37a'],
+  firework: ['#ffd23f', '#ff6fb5', '#6fd3ff', '#ffffff'],
   inner: '#ffffff',
   hit: '#ffffff',
 }
@@ -88,6 +100,9 @@ export function prepareChart(chart: Chart, first: number): PreparedChart {
 export interface RenderOptions {
   /** World units per second, from noteSpeedFromSetting(). */
   speed: number
+  touch: TouchTiming
+  /** Draw the firework burst of touches marked `f`. */
+  fireworks: boolean
 }
 
 export class Renderer {
@@ -137,7 +152,7 @@ export class Renderer {
     for (let i = chart.notes.length - 1; i >= 0; i--) {
       const p = chart.notes[i]!
       if (p.time - lead > now || p.end < now) continue
-      if (p.note.location.group !== 'button') continue // touches: M3
+      if (p.note.location.group !== 'button') continue // touches are drawn below
       if (p.note.head === 'none') continue // slide without a star tap
       if (p.note.kind === 'hold') this.drawHold(p, now, opts.speed)
       else this.drawTap(p, now, opts.speed)
@@ -150,6 +165,20 @@ export class Renderer {
       if (p.note.location.group !== 'button' || p.note.head === 'none') continue
       if (now < p.time || p.end < now) continue
       this.drawHitEffect(p, now)
+    }
+    // touches on top of everything on the ring, later ones underneath
+    for (let i = chart.notes.length - 1; i >= 0; i--) {
+      const p = chart.notes[i]!
+      if (p.note.location.group === 'button') continue
+      if (p.time - opts.touch.whole > now || p.end < now) continue
+      this.drawTouch(p, now, opts.touch)
+    }
+    if (opts.fireworks) {
+      for (const p of chart.notes) {
+        if (!p.note.isFirework || p.note.location.group === 'button') continue
+        const t = (now - (p.time + p.note.length)) / FIREWORK_SEC
+        if (t >= 0 && t <= 1) this.drawFirework(p, t)
+      }
     }
   }
 
@@ -393,6 +422,115 @@ export class Renderer {
     ctx.strokeStyle = COLORS.inner
     ctx.lineWidth = 0.05
     ctx.stroke()
+    ctx.restore()
+  }
+
+  private touchColor(note: Note): string {
+    if (note.isMine) return COLORS.mine
+    if (note.isBreak) return COLORS.break
+    if (note.isEach) return COLORS.each
+    return COLORS.touch
+  }
+
+  /** Touch: four pieces close in on the sensor; touch holds then fill a ring. */
+  private drawTouch(p: PreparedNote, now: number, timing: TouchTiming) {
+    const { ctx } = this
+    const { note } = p
+    const pos = touchPosition(note.location)
+    const holdEnd = p.time + note.length
+    if (now > holdEnd) {
+      const t = (now - holdEnd) / HIT_EFFECT_SEC
+      if (t > 1) return
+      ctx.strokeStyle = note.isBreak ? COLORS.break : COLORS.hit
+      ctx.globalAlpha = 1 - t
+      ctx.lineWidth = 0.12 * (1 - t) + 0.02
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, 0.5 + t * 0.6, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+      return
+    }
+    const state = touchState(now - p.time, timing)
+    if (!state) return
+    const isHold = note.kind === 'touchHold'
+    const plain = note.isBreak || note.isMine
+    const color = this.touchColor(note)
+
+    ctx.save()
+    ctx.translate(pos.x, pos.y)
+    ctx.rotate(touchRotation(note.location))
+    ctx.globalAlpha = state.alpha
+
+    if (isHold && now >= p.time && note.length > 0) {
+      // progress ring, filling clockwise from the top
+      const progress = Math.min((now - p.time) / note.length, 1)
+      ctx.lineWidth = 0.1
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+      ctx.beginPath()
+      ctx.arc(0, 0, 0.82, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.strokeStyle = plain ? color : COLORS.touchHold[0]!
+      ctx.beginPath()
+      ctx.arc(0, 0, 0.82, Math.PI / 2, Math.PI / 2 - progress * Math.PI * 2, true)
+      ctx.stroke()
+    }
+
+    const r = TOUCH_PIECE_BASE + state.spread
+    for (let i = 0; i < 4; i++) {
+      // piece i sits up, right, down, left of the centre and points inward
+      const a = (i * Math.PI) / 2
+      const dx = Math.sin(a)
+      const dy = Math.cos(a)
+      ctx.beginPath()
+      ctx.moveTo(dx * (r - 0.12), dy * (r - 0.12))
+      ctx.lineTo(dx * (r + 0.2) - dy * 0.3, dy * (r + 0.2) + dx * 0.3)
+      ctx.lineTo(dx * (r + 0.2) + dy * 0.3, dy * (r + 0.2) - dx * 0.3)
+      ctx.closePath()
+      ctx.fillStyle = isHold && !plain ? COLORS.touchHold[i]! : color
+      ctx.fill()
+      ctx.strokeStyle = COLORS.inner
+      ctx.lineWidth = 0.04
+      ctx.stroke()
+    }
+    ctx.fillStyle = COLORS.inner
+    ctx.beginPath()
+    ctx.arc(0, 0, 0.07, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
+
+  /** Firework burst for touches marked `f`; t goes 0..1 over FIREWORK_SEC. */
+  private drawFirework(p: PreparedNote, t: number) {
+    const { ctx } = this
+    const pos = touchPosition(p.note.location)
+    const ease = 1 - Math.pow(1 - t, 3)
+    const fade = 1 - t
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.lineCap = 'round'
+    // rings
+    for (let k = 0; k < 3; k++) {
+      ctx.strokeStyle = COLORS.firework[k]!
+      ctx.globalAlpha = fade * 0.6
+      ctx.lineWidth = 0.08
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, ease * (2 + k * 1.3), 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    // sparks flying outward
+    const sparks = 24
+    for (let i = 0; i < sparks; i++) {
+      const a = (i / sparks) * Math.PI * 2
+      const outer = ease * (3.2 + (i % 3) * 0.8)
+      const inner = Math.max(outer - 0.6, 0)
+      ctx.strokeStyle = COLORS.firework[i % COLORS.firework.length]!
+      ctx.globalAlpha = fade
+      ctx.lineWidth = 0.07
+      ctx.beginPath()
+      ctx.moveTo(pos.x + Math.cos(a) * inner, pos.y + Math.sin(a) * inner)
+      ctx.lineTo(pos.x + Math.cos(a) * outer, pos.y + Math.sin(a) * outer)
+      ctx.stroke()
+    }
     ctx.restore()
   }
 
