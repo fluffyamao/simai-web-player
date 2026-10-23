@@ -3,7 +3,7 @@
 Plays [simai](https://w.atwiki.jp/simai/) (maimai) charts in the browser, in sync with audio.
 Canvas 2D, TypeScript, no dependencies.
 
-Note motion and play-field geometry are ported from
+Note motion, slide paths and play-field geometry are ported from
 [MajdataPlay](https://github.com/TeamMajdata/MajdataPlay) (GPL-3.0), which is based on
 [MajdataView](https://github.com/LingFeng-bbben/MajdataView). Each ported file names its source.
 The simai parser is written from scratch, following the simai documentation and
@@ -16,11 +16,12 @@ This project has no affiliation with SEGA. Note shapes are drawn in code; no gam
 | Milestone | |
 |---|---|
 | M1 parser, taps / holds / breaks / ex / each / star heads, audio sync, seek, playback rate | done |
-| M2 slides (incl. wifi and chains) | |
+| M2 slides: all standard shapes, wifi, chains, `*` multi-slides, fade-in and star motion | done |
 | M3 touch / touch hold | |
 | M4 hit effects, judge sounds, hi-speed changes | |
 
-Not handled yet: pseudo-each (`` ` ``) timing offsets, `<HS*x>` hi-speed tags (ignored).
+Standard slides are built as MajdataPlay slide codes (`src/core/slideShapes.ts`); their arrow counts
+are tested against the official prefab counts. Not handled yet: pseudo-each (`` ` ``) timing offsets, `<HS*x>` hi-speed tags (ignored).
 
 ## Usage
 

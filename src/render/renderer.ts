@@ -13,6 +13,15 @@ import {
 } from '../core/geometry'
 import { noteEndTime } from '../parser/simai'
 import type { Chart, Note } from '../parser/types'
+import {
+  prepareSlides,
+  slideProgress,
+  starOnPath,
+  trackAlpha,
+  type PathPart,
+  type PreparedSlide,
+  type WifiPart,
+} from './slides'
 
 /** World units from the centre to the edge of the canvas. */
 const VIEW_RADIUS = 5.6
@@ -51,6 +60,7 @@ interface EachGroup {
 export interface PreparedChart {
   notes: PreparedNote[]
   eachGroups: EachGroup[]
+  slides: PreparedSlide[]
 }
 
 /** Shift a parsed chart to audio time (`first` seconds of lead-in). */
@@ -72,7 +82,7 @@ export function prepareChart(chart: Chart, first: number): PreparedChart {
     time: key / 1e6,
     positions: [...new Set(positions)].sort((a, b) => a - b),
   }))
-  return { notes, eachGroups }
+  return { notes, eachGroups, slides: prepareSlides(notes) }
 }
 
 export interface RenderOptions {
@@ -114,6 +124,13 @@ export class Renderer {
     if (!chart) return
 
     const lead = appearLead(opts.speed)
+    // slide tracks under everything else, later slides underneath
+    for (let i = chart.slides.length - 1; i >= 0; i--) {
+      const s = chart.slides[i]!
+      if (now > s.endTime) continue
+      const alpha = trackAlpha(s, now, opts.speed)
+      if (alpha > 0) this.drawSlideTrack(s, now, alpha)
+    }
     this.drawEachLines(chart, now, opts.speed, lead)
 
     // later notes underneath, earlier ones on top
@@ -121,9 +138,13 @@ export class Renderer {
       const p = chart.notes[i]!
       if (p.time - lead > now || p.end < now) continue
       if (p.note.location.group !== 'button') continue // touches: M3
-      if (p.note.head === 'none') continue // slide-only notes: M2
+      if (p.note.head === 'none') continue // slide without a star tap
       if (p.note.kind === 'hold') this.drawHold(p, now, opts.speed)
       else this.drawTap(p, now, opts.speed)
+    }
+    for (let i = chart.slides.length - 1; i >= 0; i--) {
+      const s = chart.slides[i]!
+      if (now >= s.tapTime && now <= s.endTime) this.drawSlideStars(s, now)
     }
     for (const p of chart.notes) {
       if (p.note.location.group !== 'button' || p.note.head === 'none') continue
@@ -235,6 +256,144 @@ export class Renderer {
       else ctx.lineTo(r * Math.cos(a), r * Math.sin(a))
     }
     ctx.closePath()
+  }
+
+  private slideColor(s: PreparedSlide): string {
+    if (s.note.isMine) return COLORS.mine
+    if (s.slide.isBreak) return COLORS.break
+    if (s.isEach) return COLORS.each
+    return COLORS.star
+  }
+
+  /** How far (0..1) the star has gone through `part`; 0 before the slide starts. */
+  private partProgress(s: PreparedSlide, part: { t0: number; t1: number }, now: number): number {
+    if (now < s.startTime) return 0
+    const p = slideProgress(s, now)
+    if (part.t1 <= part.t0) return p >= part.t1 ? 1 : 0
+    return Math.min(Math.max((p - part.t0) / (part.t1 - part.t0), 0), 1)
+  }
+
+  private drawSlideTrack(s: PreparedSlide, now: number, alpha: number) {
+    const { ctx } = this
+    const color = this.slideColor(s)
+    ctx.globalAlpha = alpha
+    for (const part of s.parts) {
+      const local = this.partProgress(s, part, now)
+      if (local >= 1) continue
+      if (part.kind === 'path') this.drawArrows(part, local, color)
+      else this.drawWifiBars(part, local, color)
+    }
+    ctx.globalAlpha = 1
+  }
+
+  /** Chevron arrows along a path; the ones the star has passed are gone. */
+  private drawArrows(part: PathPart, local: number, color: string) {
+    const { ctx } = this
+    const passed = local * (part.arrows.length - 1)
+    ctx.fillStyle = color
+    for (let i = part.first; i < part.last; i++) {
+      if (local > 0 && i <= passed) continue
+      const a = part.arrows[i]!
+      ctx.save()
+      ctx.translate(a.point.x, a.point.y)
+      ctx.rotate(Math.atan2(a.direction.y, a.direction.x))
+      ctx.beginPath()
+      ctx.moveTo(0.16, 0)
+      ctx.lineTo(-0.1, 0.3)
+      ctx.lineTo(-0.24, 0.3)
+      ctx.lineTo(0.02, 0)
+      ctx.lineTo(-0.24, -0.3)
+      ctx.lineTo(-0.1, -0.3)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  /** Wifi: bars that widen from the start towards the three end buttons. */
+  private drawWifiBars(part: WifiPart, local: number, color: string) {
+    const { ctx } = this
+    const [right, centre, left] = part.ends
+    const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, f: number) => ({
+      x: a.x + (b.x - a.x) * f,
+      y: a.y + (b.y - a.y) * f,
+    })
+    const dx = centre.x - part.start.x
+    const dy = centre.y - part.start.y
+    const len = Math.hypot(dx, dy)
+    ctx.strokeStyle = color
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    const bars = 12
+    for (let j = 1; j <= bars; j++) {
+      const f = j / (bars + 1)
+      if (local > 0 && f <= local) continue
+      const l = lerp(part.start, left, f)
+      const r = lerp(part.start, right, f)
+      // a slight chevron pointing the way the stars travel
+      const bend = 0.12 + 0.18 * f
+      ctx.lineWidth = 0.1 + 0.06 * f
+      ctx.beginPath()
+      ctx.moveTo(l.x, l.y)
+      ctx.lineTo((l.x + r.x) / 2 + (dx / len) * bend, (l.y + r.y) / 2 + (dy / len) * bend)
+      ctx.lineTo(r.x, r.y)
+      ctx.stroke()
+    }
+  }
+
+  private drawSlideStars(s: PreparedSlide, now: number) {
+    const color = this.slideColor(s)
+    const first = s.parts[0]!
+    if (now < s.startTime) {
+      // the star fades and grows in between the tap and the start of the slide
+      if (s.note.head === 'none') return
+      const wait = s.startTime - s.tapTime
+      const alpha = wait > 0 ? Math.min(Math.max(1 - (s.startTime - now) / wait, 0), 1) : 1
+      const scale = (alpha + 0.5) / 1.5
+      if (first.kind === 'path') {
+        const { point, angle } = starOnPath(first, 0)
+        this.drawStarAt(point.x, point.y, angle, scale, alpha, color)
+      } else {
+        // the three wifi stars sit on top of each other until they split
+        const centre = first.ends[1]
+        const angle = Math.atan2(centre.y - first.start.y, centre.x - first.start.x)
+        this.drawStarAt(first.start.x, first.start.y, angle, scale, alpha, color)
+      }
+      return
+    }
+    const p = slideProgress(s, now)
+    const part = s.parts.find((x) => p <= x.t1) ?? s.parts[s.parts.length - 1]!
+    const local = this.partProgress(s, part, now)
+    if (part.kind === 'path') {
+      const { point, angle } = starOnPath(part, local)
+      this.drawStarAt(point.x, point.y, angle, 1, 1, color)
+    } else {
+      for (const end of part.ends) {
+        const angle = Math.atan2(end.y - part.start.y, end.x - part.start.x)
+        const x = part.start.x + (end.x - part.start.x) * local
+        const y = part.start.y + (end.y - part.start.y) * local
+        this.drawStarAt(x, y, angle, 1, 1, color)
+      }
+    }
+  }
+
+  private drawStarAt(x: number, y: number, angle: number, scale: number, alpha: number, color: string) {
+    const { ctx } = this
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.translate(x, y)
+    ctx.rotate(angle)
+    ctx.scale(scale, scale)
+    this.starPath(NOTE_RADIUS * 1.05, NOTE_RADIUS * 0.45)
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'
+    ctx.fill()
+    ctx.strokeStyle = color
+    ctx.lineWidth = 0.17
+    ctx.stroke()
+    ctx.strokeStyle = COLORS.inner
+    ctx.lineWidth = 0.05
+    ctx.stroke()
+    ctx.restore()
   }
 
   private drawHold(p: PreparedNote, now: number, speed: number) {
