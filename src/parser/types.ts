@@ -60,6 +60,8 @@ export interface Note {
   slides: SlidePath[]
   /** Set by the parser for notes that share a time slot with other notes. */
   isEach: boolean
+  /** Speed multiplier from MajSimai `<HS*x>` (1 = normal, negative = notes come from outside). */
+  hspeed: number
 }
 
 export interface TimingPoint {

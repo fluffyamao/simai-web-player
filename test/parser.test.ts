@@ -66,6 +66,12 @@ describe('parseSimai', () => {
     expect(e!.slides[0]!.duration).toBe(0.5)
   })
 
+  it('reads hi-speed tags', () => {
+    const c = parseSimai('(120)1,<HS*1.5>2,<SV*2>3,<HS*-1>4,')
+    expect(c.notes.map((n) => n.hspeed)).toEqual([1, 1.5, 1.5, -1])
+    expect(c.errors).toEqual([])
+  })
+
   it('skips comments and hi-speed tags, and reports bad input', () => {
     const c = parseSimai('(120)1,|| comment\n<HS*1.5>2,9,')
     expect(c.notes).toHaveLength(2)

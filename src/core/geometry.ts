@@ -13,6 +13,8 @@ export const JUDGE_RADIUS = 4.8
 export const SPAWN_RADIUS = 1.225
 /** How fast a note grows while it sits at the spawn point (MajdataPlay "NoteAppearRate"). */
 export const NOTE_APPEAR_RATE = 0.265
+/** Where notes with negative hi-speed appear (just outside the view). */
+const OUTER_SPAWN_RADIUS = 6.4
 
 export interface Vec2 {
   x: number
@@ -55,6 +57,10 @@ export interface TapState {
  */
 export function tapState(sinceHit: number, speed: number): TapState | null {
   const distance = sinceHit * speed + JUDGE_RADIUS
+  if (speed < 0) {
+    // negative hi-speed: the note flies in from outside the ring at full size
+    return distance <= OUTER_SPAWN_RADIUS ? { distance, scale: 1 } : null
+  }
   const scale = distance * NOTE_APPEAR_RATE + (1 - NOTE_APPEAR_RATE * SPAWN_RADIUS)
   if (scale < 0) return null
   if (distance < SPAWN_RADIUS) return { distance: SPAWN_RADIUS, scale: Math.min(scale, 1) }
@@ -63,6 +69,7 @@ export function tapState(sinceHit: number, speed: number): TapState | null {
 
 /** Seconds before the hit time when a note becomes visible. */
 export function appearLead(speed: number): number {
+  if (speed < 0) return (OUTER_SPAWN_RADIUS - JUDGE_RADIUS) / -speed
   // scale reaches 0 when distance = -(1 - rate * spawn) / rate
   const d = -(1 - NOTE_APPEAR_RATE * SPAWN_RADIUS) / NOTE_APPEAR_RATE
   return (JUDGE_RADIUS - d) / speed
@@ -81,6 +88,7 @@ export interface HoldState {
  * afterwards the body stretches from the tail to the head.
  */
 export function holdState(sinceHit: number, length: number, speed: number): HoldState | null {
+  speed = Math.abs(speed) // reversed holds are drawn like normal ones
   const head = tapState(sinceHit, speed)
   if (!head) return null
   if (head.scale < 1) return { head: head.distance, tail: head.distance, scale: head.scale }

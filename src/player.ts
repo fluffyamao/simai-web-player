@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { hitSoundEvents, HitSoundPlayer } from './audio/hitSounds'
 import { FreeClock, MediaClock, type Clock } from './core/clock'
 import { noteSpeedFromSetting } from './core/geometry'
-import { touchTiming, type TouchTiming } from './core/touch'
 import { parseSimai } from './parser/simai'
 import type { Chart, Maidata } from './parser/types'
 import { prepareChart, Renderer, type PreparedChart } from './render/renderer'
@@ -13,6 +13,10 @@ export interface PlayerOptions {
   touchSpeed?: number
   /** Show the firework burst of touches marked `f`. Default true. */
   fireworks?: boolean
+  /** Play synthesised hit sounds. Default true. */
+  hitSounds?: boolean
+  /** Hit sound volume, 0..1. Default 0.5. */
+  hitSoundVolume?: number
 }
 
 export interface LoadOptions {
@@ -44,8 +48,9 @@ export class SimaiPlayer {
   private prepared: PreparedChart | null = null
   private _chart: Chart | null = null
   private speed: number
-  private touch: TouchTiming
+  private touchSpeed: number
   private fireworks: boolean
+  private sounds = new HitSoundPlayer()
   private frame = 0
   private dirty = true
   private lastTime = -1
@@ -55,8 +60,10 @@ export class SimaiPlayer {
   constructor(readonly canvas: HTMLCanvasElement, options: PlayerOptions = {}) {
     this.renderer = new Renderer(canvas)
     this.speed = noteSpeedFromSetting(options.tapSpeed ?? 7.5)
-    this.touch = touchTiming(options.touchSpeed ?? 7.5)
+    this.touchSpeed = options.touchSpeed ?? 7.5
     this.fireworks = options.fireworks ?? true
+    this.sounds.enabled = options.hitSounds ?? true
+    this.sounds.volume = options.hitSoundVolume ?? 0.5
     this.resizeObserver = new ResizeObserver(() => {
       if (this.renderer.resize()) this.dirty = true
     })
@@ -111,11 +118,14 @@ export class SimaiPlayer {
 
     this._chart = chart
     this.prepared = prepareChart(chart, first)
+    this.updateSoundEvents()
     this.dirty = true
     return chart
   }
 
   play() {
+    // browsers only allow audio to start from a user gesture, which play() usually is
+    if (this.sounds.enabled) this.sounds.unlock()
     return this.clock?.play() ?? Promise.resolve()
   }
 
@@ -130,6 +140,7 @@ export class SimaiPlayer {
 
   seek(time: number) {
     this.clock?.seek(time)
+    this.sounds.reset()
     this.dirty = true
   }
 
@@ -144,14 +155,26 @@ export class SimaiPlayer {
   }
 
   setTouchSpeed(touchSpeed: number) {
-    this.touch = touchTiming(touchSpeed)
+    this.touchSpeed = touchSpeed
     this.dirty = true
   }
 
   /** Show or hide the firework burst of `f` touches. */
   setFireworks(enabled: boolean) {
     this.fireworks = enabled
+    this.updateSoundEvents()
     this.dirty = true
+  }
+
+  /** Turn hit sounds on or off, optionally setting the volume (0..1). */
+  setHitSounds(enabled: boolean, volume?: number) {
+    this.sounds.enabled = enabled
+    if (volume !== undefined) this.sounds.volume = volume
+    if (enabled && this.playing) this.sounds.unlock()
+  }
+
+  private updateSoundEvents() {
+    this.sounds.setEvents(this.prepared ? hitSoundEvents(this.prepared.notes, this.fireworks) : [])
   }
 
   /** Called every frame while the time changes. Returns an unsubscribe function. */
@@ -166,17 +189,19 @@ export class SimaiPlayer {
     if (this.ownsAudio) this.clock?.destroy()
     else this.clock?.pause()
     this.listeners.clear()
+    this.sounds.destroy()
   }
 
   private tick = () => {
     this.frame = requestAnimationFrame(this.tick)
     const now = this.currentTime
+    this.sounds.update(now, this.playing, this.clock?.rate ?? 1)
     if (!this.dirty && now === this.lastTime) return
     this.dirty = false
     this.lastTime = now
     this.renderer.render(this.prepared, now, {
       speed: this.speed,
-      touch: this.touch,
+      touchSpeed: this.touchSpeed,
       fireworks: this.fireworks,
     })
     for (const l of this.listeners) l(now)

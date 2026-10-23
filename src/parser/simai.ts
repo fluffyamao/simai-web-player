@@ -25,6 +25,7 @@ type TokenType =
   | 'each' // /
   | 'pseudoEach' // `
   | 'end' // E
+  | 'hspeed' // <HS*x>
 
 interface Token {
   type: TokenType
@@ -70,9 +71,11 @@ function tokenize(src: string, errors: ParseError[]): Token[] {
       while (i < src.length && src[i] !== '\n') i++
       continue
     }
-    // MajSimai hi-speed changes like <HS*1.5>: not supported yet, skip them
-    if (c === '<' && /^<HS\*[^>]*>/.test(src.slice(i, i + 16))) {
-      i = src.indexOf('>', i) + 1
+    // MajSimai tags: <HS*1.5> changes note speed from here on; <SV*x> is ignored
+    const tag = c === '<' ? /^<(HS|SV)\*([^>]*)>/.exec(src.slice(i, i + 24)) : null
+    if (tag) {
+      if (tag[1] === 'HS') push('hspeed', tag[2]!.trim(), start)
+      i += tag[0].length
       continue
     }
     const section = SECTIONS[c]
@@ -222,6 +225,7 @@ export function parseSimai(src: string, options: ParseOptions = {}): Chart {
   let fixedStep: number | null = null // seconds per comma from {#x}
   let time = 0
   let endTime: number | null = null
+  let hspeed = 1
   let group: Note[] = []
   let groupBroken = false
   let pos = 0
@@ -297,6 +301,7 @@ export function parseSimai(src: string, options: ParseOptions = {}): Chart {
       head: 'auto',
       slides: [],
       isEach: false,
+      hspeed,
     }
     while (pos < tokens.length) {
       const t = peek()!
@@ -391,6 +396,12 @@ export function parseSimai(src: string, options: ParseOptions = {}): Chart {
         break
       case 'each':
         break
+      case 'hspeed': {
+        const value = parseFloat(t.text)
+        if (Number.isFinite(value) && value !== 0) hspeed = value
+        else error(t, `bad hi-speed <HS*${t.text}>`)
+        break
+      }
       case 'pseudoEach':
         groupBroken = true
         break

@@ -13,6 +13,8 @@ const rate = $<HTMLSelectElement>('rate')
 const tapSpeed = $<HTMLInputElement>('tapSpeed')
 const touchSpeed = $<HTMLInputElement>('touchSpeed')
 const fireworks = $<HTMLInputElement>('fireworks')
+const hitSounds = $<HTMLInputElement>('hitSounds')
+const hitVolume = $<HTMLInputElement>('hitVolume')
 
 const player = new SimaiPlayer(canvas)
 // handy for poking at it from the devtools console
@@ -83,6 +85,9 @@ rate.addEventListener('change', () => player.setRate(Number(rate.value)))
 tapSpeed.addEventListener('change', () => player.setTapSpeed(Number(tapSpeed.value)))
 touchSpeed.addEventListener('change', () => player.setTouchSpeed(Number(touchSpeed.value)))
 fireworks.addEventListener('change', () => player.setFireworks(fireworks.checked))
+const applyHitSounds = () => player.setHitSounds(hitSounds.checked, Number(hitVolume.value))
+hitSounds.addEventListener('change', applyHitSounds)
+hitVolume.addEventListener('input', applyHitSounds)
 
 player.onTime((t) => {
   timeLabel.textContent = fmt(t)

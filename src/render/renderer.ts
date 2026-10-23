@@ -16,6 +16,7 @@ import {
   touchPosition,
   touchRotation,
   touchState,
+  touchTiming,
   type TouchTiming,
 } from '../core/touch'
 import { noteEndTime } from '../parser/simai'
@@ -35,6 +36,7 @@ const VIEW_RADIUS = 5.6
 const NOTE_RADIUS = 0.58
 const HIT_EFFECT_SEC = 0.25
 const FIREWORK_SEC = 1.2
+const SLIDE_END_SEC = 0.3
 
 export const COLORS = {
   background: '#0d1017',
@@ -67,6 +69,7 @@ interface PreparedNote {
 interface EachGroup {
   time: number
   positions: number[]
+  hspeed: number
 }
 
 export interface PreparedChart {
@@ -82,17 +85,18 @@ export function prepareChart(chart: Chart, first: number): PreparedChart {
     time: note.time + first,
     end: noteEndTime(note) + first + HIT_EFFECT_SEC,
   }))
-  const byTime = new Map<number, number[]>()
+  const byTime = new Map<number, { positions: number[]; hspeed: number }>()
   for (const { note, time } of notes) {
     if (!note.isEach || note.location.group !== 'button') continue
     const key = Math.round(time * 1e6)
-    const list = byTime.get(key) ?? []
-    list.push(note.location.index)
-    byTime.set(key, list)
+    const group = byTime.get(key) ?? { positions: [], hspeed: note.hspeed }
+    group.positions.push(note.location.index)
+    byTime.set(key, group)
   }
-  const eachGroups = [...byTime.entries()].map(([key, positions]) => ({
+  const eachGroups = [...byTime.entries()].map(([key, g]) => ({
     time: key / 1e6,
-    positions: [...new Set(positions)].sort((a, b) => a - b),
+    positions: [...new Set(g.positions)].sort((a, b) => a - b),
+    hspeed: g.hspeed,
   }))
   return { notes, eachGroups, slides: prepareSlides(notes) }
 }
@@ -100,7 +104,8 @@ export function prepareChart(chart: Chart, first: number): PreparedChart {
 export interface RenderOptions {
   /** World units per second, from noteSpeedFromSetting(). */
   speed: number
-  touch: TouchTiming
+  /** In-game touch speed setting; touches get their timing from it times hi-speed. */
+  touchSpeed: number
   /** Draw the firework burst of touches marked `f`. */
   fireworks: boolean
 }
@@ -138,28 +143,29 @@ export class Renderer {
     this.drawField()
     if (!chart) return
 
-    const lead = appearLead(opts.speed)
     // slide tracks under everything else, later slides underneath
     for (let i = chart.slides.length - 1; i >= 0; i--) {
       const s = chart.slides[i]!
       if (now > s.endTime) continue
-      const alpha = trackAlpha(s, now, opts.speed)
+      const alpha = trackAlpha(s, now, Math.abs(opts.speed * s.note.hspeed))
       if (alpha > 0) this.drawSlideTrack(s, now, alpha)
     }
-    this.drawEachLines(chart, now, opts.speed, lead)
+    this.drawEachLines(chart, now, opts.speed)
 
     // later notes underneath, earlier ones on top
     for (let i = chart.notes.length - 1; i >= 0; i--) {
       const p = chart.notes[i]!
-      if (p.time - lead > now || p.end < now) continue
+      const speed = opts.speed * p.note.hspeed
+      if (p.time - appearLead(speed) > now || p.end < now) continue
       if (p.note.location.group !== 'button') continue // touches are drawn below
       if (p.note.head === 'none') continue // slide without a star tap
-      if (p.note.kind === 'hold') this.drawHold(p, now, opts.speed)
-      else this.drawTap(p, now, opts.speed)
+      if (p.note.kind === 'hold') this.drawHold(p, now, speed)
+      else this.drawTap(p, now, speed)
     }
     for (let i = chart.slides.length - 1; i >= 0; i--) {
       const s = chart.slides[i]!
       if (now >= s.tapTime && now <= s.endTime) this.drawSlideStars(s, now)
+      else if (now > s.endTime) this.drawSlideEnd(s, now)
     }
     for (const p of chart.notes) {
       if (p.note.location.group !== 'button' || p.note.head === 'none') continue
@@ -170,8 +176,9 @@ export class Renderer {
     for (let i = chart.notes.length - 1; i >= 0; i--) {
       const p = chart.notes[i]!
       if (p.note.location.group === 'button') continue
-      if (p.time - opts.touch.whole > now || p.end < now) continue
-      this.drawTouch(p, now, opts.touch)
+      const timing = touchTiming(opts.touchSpeed * Math.abs(p.note.hspeed))
+      if (p.time - timing.whole > now || p.end < now) continue
+      this.drawTouch(p, now, timing)
     }
     if (opts.fireworks) {
       for (const p of chart.notes) {
@@ -448,6 +455,7 @@ export class Renderer {
       ctx.arc(pos.x, pos.y, 0.5 + t * 0.6, 0, Math.PI * 2)
       ctx.stroke()
       ctx.globalAlpha = 1
+      if (note.isBreak) this.drawBurst(pos.x, pos.y, t, COLORS.break)
       return
     }
     const state = touchState(now - p.time, timing)
@@ -564,10 +572,11 @@ export class Renderer {
     ctx.restore()
   }
 
-  private drawEachLines(chart: PreparedChart, now: number, speed: number, lead: number) {
+  private drawEachLines(chart: PreparedChart, now: number, baseSpeed: number) {
     const { ctx } = this
     for (const g of chart.eachGroups) {
-      if (g.time - lead > now || g.time < now) continue
+      const speed = baseSpeed * g.hspeed
+      if (g.time - appearLead(speed) > now || g.time < now) continue
       const state = tapState(now - g.time, speed)
       if (!state || state.scale < 0.3) continue
       ctx.strokeStyle = COLORS.each
@@ -617,6 +626,52 @@ export class Renderer {
     ctx.beginPath()
     ctx.arc(pt.x, pt.y, NOTE_RADIUS * (0.8 + t * 0.9), 0, Math.PI * 2)
     ctx.stroke()
+    ctx.globalAlpha = 1
+    if (note.isBreak) this.drawBurst(pt.x, pt.y, t, COLORS.break)
+  }
+
+  /** Rays flying out of a point, for breaks; t goes 0..1. */
+  private drawBurst(x: number, y: number, t: number, color: string) {
+    const { ctx } = this
+    const ease = 1 - Math.pow(1 - t, 2)
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = color
+    ctx.globalAlpha = 1 - t
+    ctx.lineWidth = 0.08
+    ctx.lineCap = 'round'
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + 0.2
+      const outer = NOTE_RADIUS * (0.9 + ease * 1.6)
+      const inner = NOTE_RADIUS * (0.6 + ease * 1.1)
+      ctx.beginPath()
+      ctx.moveTo(x + Math.cos(a) * inner, y + Math.sin(a) * inner)
+      ctx.lineTo(x + Math.cos(a) * outer, y + Math.sin(a) * outer)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
+  /** Flash where a slide ends, once the star arrives. */
+  private drawSlideEnd(s: PreparedSlide, now: number) {
+    const t = (now - s.endTime) / SLIDE_END_SEC
+    if (t < 0 || t > 1) return
+    const last = s.parts[s.parts.length - 1]!
+    const points = last.kind === 'path' ? [last.arrows[last.arrows.length - 1]!.point] : last.ends
+    const { ctx } = this
+    const color = this.slideColor(s)
+    for (const pt of points) {
+      ctx.globalAlpha = 1 - t
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.arc(pt.x, pt.y, NOTE_RADIUS * (0.5 + t * 0.8), 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = (1 - t) * 0.9
+      ctx.strokeStyle = COLORS.hit
+      ctx.lineWidth = 0.06
+      ctx.stroke()
+      if (s.slide.isBreak) this.drawBurst(pt.x, pt.y, t, COLORS.break)
+    }
     ctx.globalAlpha = 1
   }
 }

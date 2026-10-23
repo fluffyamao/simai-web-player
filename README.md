@@ -9,7 +9,8 @@ Note motion, slide paths and play-field geometry are ported from
 The simai parser is written from scratch, following the simai documentation and
 [SimaiSharp](https://github.com/reflektone-games/SimaiSharp) (MIT).
 
-This project has no affiliation with SEGA. Note shapes are drawn in code; no game assets are included.
+This project has no affiliation with SEGA. Note shapes are drawn and hit sounds are synthesised in code;
+no game assets are included.
 
 ## Status
 
@@ -18,17 +19,23 @@ This project has no affiliation with SEGA. Note shapes are drawn in code; no gam
 | M1 parser, taps / holds / breaks / ex / each / star heads, audio sync, seek, playback rate | done |
 | M2 slides: all standard shapes, wifi, chains, `*` multi-slides, fade-in and star motion | done |
 | M3 touch / touch hold, firework burst (can be turned off) | done |
-| M4 hit effects, judge sounds, hi-speed changes | |
+| M4 hit sounds (synthesised), break / slide-end effects, `<HS*x>` hi-speed | done |
 
 Standard slides are built as MajdataPlay slide codes (`src/core/slideShapes.ts`); their arrow counts
-are tested against the official prefab counts. Not handled yet: pseudo-each (`` ` ``) timing offsets, `<HS*x>` hi-speed tags (ignored).
+are tested against the official prefab counts. Not handled yet: pseudo-each (`` ` ``) timing offsets, `<SV*x>` tags (ignored), judgement text.
 
 ## Usage
 
 ```ts
 import { parseMaidata, SimaiPlayer } from 'simai-web-player'
 
-const player = new SimaiPlayer(canvas, { tapSpeed: 7.5, touchSpeed: 7.5, fireworks: true })
+const player = new SimaiPlayer(canvas, {
+  tapSpeed: 7.5,
+  touchSpeed: 7.5,
+  fireworks: true,
+  hitSounds: true,
+  hitSoundVolume: 0.5,
+})
 await player.load({
   maidata: parseMaidata(await (await fetch('maidata.txt')).text()),
   difficulty: 5,          // 1 Easy .. 5 Master, 6 Re:Master, 7 Utage
@@ -38,6 +45,7 @@ player.play()
 player.seek(42.5)
 player.setRate(0.5)       // half speed, pitch kept
 player.setFireworks(false) // hide the burst of `f` touches
+player.setHitSounds(true, 0.3)
 player.onTime((t) => { /* every frame while time changes */ })
 ```
 
