@@ -45,7 +45,7 @@ export interface PreparedSlide {
   parts: SlidePart[]
 }
 
-/** Bars in a wifi slide; also its weight when chained. */
+/** Bars in a wifi slide; also its weight when chained (MajRadar counts 12). */
 const WIFI_BARS = 12
 
 function buildPart(start: number, seg: SlidePath['segments'][number]): SlidePart | null {

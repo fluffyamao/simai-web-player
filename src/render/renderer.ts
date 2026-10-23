@@ -10,11 +10,11 @@ import {
   JUDGE_RADIUS,
   SPAWN_RADIUS,
   tapState,
+  type Vec2,
 } from '../core/geometry'
 import {
   TOUCH_PIECE_BASE,
   touchPosition,
-  touchRotation,
   touchState,
   touchTiming,
   type TouchTiming,
@@ -37,6 +37,8 @@ const NOTE_RADIUS = 0.58
 const HIT_EFFECT_SEC = 0.25
 const FIREWORK_SEC = 1.2
 const SLIDE_END_SEC = 0.3
+/** How far each of the 11 wifi bars sits from the start, as a fraction of the way to the ends. */
+const WIFI_BAR_SCALES = [0.084, 0.148, 0.223, 0.301, 0.381, 0.48, 0.574, 0.668, 0.763, 0.856, 0.965]
 
 export const COLORS = {
   background: '#0d1017',
@@ -346,33 +348,31 @@ export class Renderer {
     }
   }
 
-  /** Wifi: bars that widen from the start towards the three end buttons. */
+  /**
+   * Wifi: each bar is the outline "end+1 -> end -> end-1" of the ring, shrunk towards the
+   * start button by a fixed factor (fitted to MajdataPlay's wifi prefab and sprites).
+   */
   private drawWifiBars(part: WifiPart, local: number, color: string) {
     const { ctx } = this
-    const [right, centre, left] = part.ends
-    const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, f: number) => ({
-      x: a.x + (b.x - a.x) * f,
-      y: a.y + (b.y - a.y) * f,
+    const { start } = part
+    const toward = (p: { x: number; y: number }, f: number) => ({
+      x: start.x + (p.x - start.x) * f,
+      y: start.y + (p.y - start.y) * f,
     })
-    const dx = centre.x - part.start.x
-    const dy = centre.y - part.start.y
-    const len = Math.hypot(dx, dy)
-    ctx.strokeStyle = color
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    const bars = 12
-    for (let j = 1; j <= bars; j++) {
-      const f = j / (bars + 1)
+    for (const f of WIFI_BAR_SCALES) {
       if (local > 0 && f <= local) continue
-      const l = lerp(part.start, left, f)
-      const r = lerp(part.start, right, f)
-      // a slight chevron pointing the way the stars travel
-      const bend = 0.12 + 0.18 * f
-      ctx.lineWidth = 0.1 + 0.06 * f
+      const [a, b, c] = part.ends.map((p) => toward(p, f)) as [Vec2, Vec2, Vec2]
       ctx.beginPath()
-      ctx.moveTo(l.x, l.y)
-      ctx.lineTo((l.x + r.x) / 2 + (dx / len) * bend, (l.y + r.y) / 2 + (dy / len) * bend)
-      ctx.lineTo(r.x, r.y)
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.lineTo(c.x, c.y)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 0.14
+      ctx.stroke()
+      ctx.strokeStyle = COLORS.inner
+      ctx.lineWidth = 0.04
       ctx.stroke()
     }
   }
@@ -465,8 +465,8 @@ export class Renderer {
     const color = this.touchColor(note)
 
     ctx.save()
+    // touches are never rotated: pieces always point up, right, down and left on screen
     ctx.translate(pos.x, pos.y)
-    ctx.rotate(touchRotation(note.location))
     ctx.globalAlpha = state.alpha
 
     if (isHold && now >= p.time && note.length > 0) {

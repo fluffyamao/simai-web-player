@@ -18,13 +18,6 @@ export function touchPosition(loc: Location): Vec2 {
   return { x: d * Math.cos(angle), y: d * Math.sin(angle) }
 }
 
-/** Rotation that makes a touch's "up" piece point away from the centre (C is not rotated). */
-export function touchRotation(loc: Location): number {
-  if (loc.group === 'C') return 0
-  const p = touchPosition(loc)
-  return Math.atan2(p.y, p.x) - Math.PI / 2
-}
-
 export interface TouchTiming {
   /** Seconds before the hit when the touch appears. */
   whole: number
