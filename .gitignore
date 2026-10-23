@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# local test charts (audio is copyrighted, never commit)
+demo/samples/

@@ -1,0 +1,29 @@
+{
+  "name": "simai-web-player",
+  "version": "0.1.0",
+  "description": "Web player for simai (maimai) charts, synced to audio. Ported from MajdataPlay.",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "main": "./dist/simai-web-player.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/simai-web-player.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

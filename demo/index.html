@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>simai-web-player demo</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; background: #0d1017; color: #d8deea; }
+      main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
+      canvas { width: 100%; aspect-ratio: 1; display: block; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .row input[type=range] { flex: 1; min-width: 160px; }
+      button, select, input { font: inherit; }
+      #info { font-size: 14px; color: #8f9ab3; }
+      #errors { font-size: 13px; color: #ff9b7a; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="row">
+        <label>谱面文件夹 <input id="folder" type="file" webkitdirectory /></label>
+        <select id="difficulty"></select>
+      </div>
+      <div id="info">选择一个包含 maidata.txt 和 track.mp3 的文件夹（或用 ?song=文件夹名 读取 demo/samples/ 下的谱面）</div>
+      <canvas id="view"></canvas>
+      <div class="row">
+        <button id="play">播放</button>
+        <input id="seek" type="range" min="0" max="1" step="0.01" value="0" />
+        <span id="time">0:00.00</span>
+      </div>
+      <div class="row">
+        <label>播放速度
+          <select id="rate">
+            <option>0.25</option><option>0.5</option><option>0.75</option>
+            <option selected>1</option><option>1.25</option><option>1.5</option>
+          </select>
+        </label>
+        <label>流速 <input id="tapSpeed" type="number" min="1" max="10" step="0.25" value="7.5" style="width: 5em" /></label>
+        <span id="info2" style="color:#8f9ab3;font-size:13px">空格 播放/暂停，← → 跳 2 秒</span>
+      </div>
+      <div id="errors"></div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
