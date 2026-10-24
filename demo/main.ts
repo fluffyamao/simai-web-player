@@ -21,7 +21,6 @@ const player = new SimaiPlayer(canvas)
 Object.assign(window, { player })
 let maidata: Maidata | null = null
 let audioUrl: string | undefined
-let seeking = false
 
 const AUDIO_NAMES = ['track.mp3', 'track.ogg', 'track.opus', 'track.wav']
 
@@ -75,11 +74,11 @@ playBtn.addEventListener('click', async () => {
   playBtn.textContent = player.playing ? '暂停' : '播放'
 })
 
-seek.addEventListener('input', () => {
-  seeking = true
-  player.seek(Number(seek.value) * player.duration)
-})
-seek.addEventListener('change', () => (seeking = false))
+// dragging the bar scrubs: the chart follows forwards and backwards, audio resumes on release
+seek.addEventListener('pointerdown', () => player.beginScrub())
+seek.addEventListener('input', () => player.scrubTo(Number(seek.value) * player.duration))
+seek.addEventListener('change', () => player.endScrub())
+seek.addEventListener('pointerup', () => player.endScrub())
 
 rate.addEventListener('change', () => player.setRate(Number(rate.value)))
 tapSpeed.addEventListener('change', () => player.setTapSpeed(Number(tapSpeed.value)))
@@ -91,8 +90,9 @@ hitVolume.addEventListener('input', applyHitSounds)
 
 player.onTime((t) => {
   timeLabel.textContent = fmt(t)
-  if (!seeking && player.duration > 0) seek.value = String(t / player.duration)
-  if (!player.playing && playBtn.textContent === '暂停') playBtn.textContent = '播放'
+  if (player.scrubbing) return
+  if (player.duration > 0) seek.value = String(t / player.duration)
+  playBtn.textContent = player.playing ? '暂停' : '播放'
 })
 
 document.addEventListener('keydown', async (e) => {

@@ -32,6 +32,20 @@ export interface LoadOptions {
 
 type TimeListener = (time: number) => void
 
+/** How quickly the shown time catches up with the scrub target (seconds, time constant). */
+const SCRUB_SMOOTHING = 0.05
+/** A scrub further than this jumps most of the way at once instead of fast-forwarding. */
+const SCRUB_MAX_GLIDE = 3
+
+interface Scrub {
+  /** Where the user is dragging to. */
+  target: number
+  /** What is drawn now; glides towards `target` so the chart visibly runs forwards or back. */
+  shown: number
+  wasPlaying: boolean
+  lastFrame: number
+}
+
 /**
  * Plays a simai chart on a canvas, in sync with audio.
  *
@@ -55,6 +69,7 @@ export class SimaiPlayer {
   private dirty = true
   private lastTime = -1
   private listeners = new Set<TimeListener>()
+  private scrub: Scrub | null = null
   private resizeObserver: ResizeObserver
 
   constructor(readonly canvas: HTMLCanvasElement, options: PlayerOptions = {}) {
@@ -77,8 +92,14 @@ export class SimaiPlayer {
     return this._chart
   }
 
+  /** The time being shown: the playback clock, or the scrub position while scrubbing. */
   get currentTime(): number {
-    return this.clock?.now() ?? 0
+    return this.scrub ? this.scrub.shown : (this.clock?.now() ?? 0)
+  }
+
+  /** True between beginScrub() and endScrub(). */
+  get scrubbing(): boolean {
+    return this.scrub !== null
   }
 
   get duration(): number {
@@ -139,9 +160,44 @@ export class SimaiPlayer {
   }
 
   seek(time: number) {
+    if (this.scrub) {
+      this.scrubTo(time)
+      return
+    }
     this.clock?.seek(time)
     this.sounds.reset()
     this.dirty = true
+  }
+
+  /**
+   * Start dragging through the chart (e.g. on a progress bar). Audio pauses, and the chart
+   * follows scrubTo() smoothly in both directions, so dragging back plays it in reverse.
+   */
+  beginScrub() {
+    if (this.scrub || !this.clock) return
+    const now = this.clock.now()
+    this.scrub = { target: now, shown: now, wasPlaying: this.clock.playing, lastFrame: performance.now() }
+    this.clock.pause()
+    this.sounds.reset()
+  }
+
+  /** Move the scrub target; starts a scrub if none is running. */
+  scrubTo(time: number) {
+    if (!this.scrub) this.beginScrub()
+    if (!this.scrub) return
+    const duration = this.duration
+    this.scrub.target = Math.min(Math.max(time, 0), duration > 0 ? duration : Infinity)
+  }
+
+  /** Finish dragging: jump to where the user let go and resume if it was playing. */
+  endScrub() {
+    const scrub = this.scrub
+    if (!scrub) return
+    this.scrub = null
+    this.clock?.seek(scrub.target)
+    this.sounds.reset()
+    this.dirty = true
+    if (scrub.wasPlaying) void this.play()
   }
 
   /** Playback speed, e.g. 0.5 for half speed. Pitch is kept when audio is used. */
@@ -194,8 +250,9 @@ export class SimaiPlayer {
 
   private tick = () => {
     this.frame = requestAnimationFrame(this.tick)
+    if (this.scrub) this.glide(this.scrub)
     const now = this.currentTime
-    this.sounds.update(now, this.playing, this.clock?.rate ?? 1)
+    this.sounds.update(now, this.playing && !this.scrub, this.clock?.rate ?? 1)
     if (!this.dirty && now === this.lastTime) return
     this.dirty = false
     this.lastTime = now
@@ -205,5 +262,18 @@ export class SimaiPlayer {
       fireworks: this.fireworks,
     })
     for (const l of this.listeners) l(now)
+  }
+
+  /** Move the shown scrub time towards its target, frame-rate independent. */
+  private glide(scrub: Scrub) {
+    const frame = performance.now()
+    const dt = Math.min((frame - scrub.lastFrame) / 1000, 0.1)
+    scrub.lastFrame = frame
+    let gap = scrub.target - scrub.shown
+    if (Math.abs(gap) > SCRUB_MAX_GLIDE) {
+      scrub.shown = scrub.target - Math.sign(gap) * SCRUB_MAX_GLIDE
+      gap = scrub.target - scrub.shown
+    }
+    scrub.shown = Math.abs(gap) < 0.0005 ? scrub.target : scrub.shown + gap * (1 - Math.exp(-dt / SCRUB_SMOOTHING))
   }
 }

@@ -47,6 +47,12 @@ player.setRate(0.5)       // half speed, pitch kept
 player.setFireworks(false) // hide the burst of `f` touches
 player.setHitSounds(true, 0.3)
 player.onTime((t) => { /* every frame while time changes */ })
+
+// progress bar: while dragging, audio pauses and the chart follows smoothly,
+// running backwards when dragged back; playback resumes on release
+bar.addEventListener('pointerdown', () => player.beginScrub())
+bar.addEventListener('input', () => player.scrubTo(bar.valueAsNumber))
+bar.addEventListener('change', () => player.endScrub())
 ```
 
 `player.chart.errors` lists any parse errors with line and column.
