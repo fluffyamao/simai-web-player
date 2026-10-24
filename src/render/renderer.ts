@@ -58,23 +58,37 @@ const JUDGE_COLORS = {
 /** Step numbers of the slides on screen, told apart by colour. */
 const JUDGE_LABEL_COLORS = ['#ffffff', '#8ff0ff', '#ffb3e6', '#c8ff8a']
 
+/** Width of the white edges along every note band. */
+const EDGE = 0.035
+/** Inside of notes. */
+const HOLLOW = 'rgba(0, 0, 0, 0.8)'
+
+/** `color` mixed with white by `t` (0..1); colours that are not #rrggbb come back as they are. */
+function lighten(color: string, t: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(color)
+  if (!m) return color
+  const n = parseInt(m[1]!, 16)
+  const mix = (c: number) => Math.round(c + (255 - c) * t)
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`
+}
+
 /** How long a sensor stays lit after its touch ends. */
 const SENSOR_LIT_SEC = 0.15
 
 export const COLORS = {
   background: '#0d1017',
-  field: '#151a24',
-  ring: '#3a4256',
-  sensor: '#566079',
+  field: '#000000',
+  ring: '#e8ecf4',
+  sensor: '#ffffff',
   label: '#7b86a3',
   tap: '#ff5fa2',
-  star: '#33b5ff',
+  star: '#22d3ff',
   each: '#ffcf33',
   break: '#ff8a1f',
   mine: '#7d6a8c',
   touch: '#33b5ff',
-  /** Touch hold pieces: up, right, down, left. */
-  touchHold: ['#ffd23f', '#ff5a6e', '#3fa9ff', '#4fd37a'],
+  /** Touch hold quarters: top left, top right, bottom left, bottom right. */
+  touchHold: ['#3fa9ff', '#ff5a6e', '#4fd37a', '#ffd23f'],
   firework: ['#ffd23f', '#ff6fb5', '#6fd3ff', '#ffffff'],
   inner: '#ffffff',
   hit: '#ffffff',
@@ -243,7 +257,7 @@ export class Renderer {
     ctx.fill()
 
     ctx.strokeStyle = COLORS.ring
-    ctx.lineWidth = 0.04
+    ctx.lineWidth = 0.05
     ctx.beginPath()
     ctx.arc(0, 0, JUDGE_RADIUS, 0, Math.PI * 2)
     ctx.stroke()
@@ -252,7 +266,7 @@ export class Renderer {
       const p = buttonPoint(b, JUDGE_RADIUS)
       ctx.fillStyle = COLORS.sensor
       ctx.beginPath()
-      ctx.arc(p.x, p.y, 0.1, 0, Math.PI * 2)
+      ctx.arc(p.x, p.y, 0.13, 0, Math.PI * 2)
       ctx.fill()
 
       const l = buttonPoint(b, JUDGE_RADIUS + 0.75)
@@ -442,27 +456,67 @@ export class Renderer {
     ctx.translate(state.distance, 0)
     ctx.scale(state.scale, state.scale)
     this.applyExGlow(note)
-    ctx.strokeStyle = this.noteColor(note, star)
+    const color = this.noteColor(note, star)
     if (star) {
       if (note.head === 'spinStar') ctx.rotate(-now * Math.PI * 2)
-      this.starPath(NOTE_RADIUS * 1.05, NOTE_RADIUS * 0.45)
-      ctx.lineWidth = 0.17
-      ctx.stroke()
-      ctx.shadowBlur = 0
-      ctx.strokeStyle = COLORS.inner
-      ctx.lineWidth = 0.05
-      ctx.stroke()
+      this.drawStarShape(color)
     } else {
-      ctx.beginPath()
-      ctx.arc(0, 0, NOTE_RADIUS - 0.09, 0, Math.PI * 2)
-      ctx.lineWidth = 0.18
-      ctx.stroke()
-      ctx.shadowBlur = 0
-      ctx.strokeStyle = COLORS.inner
-      ctx.lineWidth = 0.05
-      ctx.stroke()
+      this.drawTapRing(color, note.isEach && !note.isBreak && !note.isMine)
     }
     ctx.restore()
+  }
+
+  /** Stroke the current path as a band of `color` with thin white edges on both sides. */
+  private band(color: string, width: number, edge = EDGE) {
+    const { ctx } = this
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = COLORS.inner
+    ctx.lineWidth = width + edge * 2
+    ctx.stroke()
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = color
+    ctx.lineWidth = width
+    ctx.stroke()
+  }
+
+  /** A tap at the origin: a thick ring with two light highlights, hollow, with a centre dot. */
+  private drawTapRing(color: string, each: boolean) {
+    const { ctx } = this
+    const r = NOTE_RADIUS - 0.14
+    const w = 0.21
+    if (each) {
+      // each notes carry a soft halo
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)'
+      ctx.lineWidth = 0.1
+      ctx.beginPath()
+      ctx.arc(0, 0, r + w / 2 + 0.1, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.beginPath()
+    ctx.arc(0, 0, r, 0, Math.PI * 2)
+    ctx.fillStyle = HOLLOW
+    ctx.fill()
+    this.band(color, w)
+    ctx.strokeStyle = lighten(color, 0.45)
+    ctx.lineWidth = w * 0.6
+    for (const start of [Math.PI * 0.15, Math.PI * 1.15]) {
+      ctx.beginPath()
+      ctx.arc(0, 0, r, start, start + Math.PI * 0.45)
+      ctx.stroke()
+    }
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(0, 0, 0.09, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  /** A star at the origin, pointing along +x. */
+  private drawStarShape(color: string) {
+    const { ctx } = this
+    this.starPath(NOTE_RADIUS * 1.05, NOTE_RADIUS * 0.47)
+    ctx.fillStyle = HOLLOW
+    ctx.fill()
+    this.band(color, 0.15)
   }
 
   private starPath(outer: number, inner: number) {
@@ -520,12 +574,12 @@ export class Renderer {
       ctx.translate(a.point.x, a.point.y)
       ctx.rotate(Math.atan2(a.direction.y, a.direction.x))
       ctx.beginPath()
-      ctx.moveTo(0.16, 0)
-      ctx.lineTo(-0.1, 0.3)
-      ctx.lineTo(-0.24, 0.3)
+      ctx.moveTo(0.19, 0)
+      ctx.lineTo(-0.11, 0.34)
+      ctx.lineTo(-0.28, 0.34)
       ctx.lineTo(0.02, 0)
-      ctx.lineTo(-0.24, -0.3)
-      ctx.lineTo(-0.1, -0.3)
+      ctx.lineTo(-0.28, -0.34)
+      ctx.lineTo(-0.11, -0.34)
       ctx.closePath()
       ctx.fill()
       ctx.restore()
@@ -605,15 +659,7 @@ export class Renderer {
     ctx.translate(x, y)
     ctx.rotate(angle)
     ctx.scale(scale, scale)
-    this.starPath(NOTE_RADIUS * 1.05, NOTE_RADIUS * 0.45)
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'
-    ctx.fill()
-    ctx.strokeStyle = color
-    ctx.lineWidth = 0.17
-    ctx.stroke()
-    ctx.strokeStyle = COLORS.inner
-    ctx.lineWidth = 0.05
-    ctx.stroke()
+    this.drawStarShape(color)
     ctx.restore()
   }
 
@@ -635,13 +681,7 @@ export class Renderer {
     if (now > holdEnd) {
       const t = (now - holdEnd) / HIT_EFFECT_SEC
       if (t > 1) return
-      ctx.strokeStyle = note.isBreak ? COLORS.break : COLORS.hit
-      ctx.globalAlpha = 1 - t
-      ctx.lineWidth = 0.12 * (1 - t) + 0.02
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, 0.5 + t * 0.6, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.globalAlpha = 1
+      this.drawHexBurst(pos.x, pos.y, t, this.touchColor(note))
       if (note.isBreak) this.drawBurst(pos.x, pos.y, t, COLORS.break)
       return
     }
@@ -672,25 +712,46 @@ export class Renderer {
     }
 
     const r = TOUCH_PIECE_BASE + state.spread
-    for (let i = 0; i < 4; i++) {
-      // piece i sits up, right, down, left of the centre and points inward
-      const a = (i * Math.PI) / 2
-      const dx = Math.sin(a)
-      const dy = Math.cos(a)
-      ctx.beginPath()
-      ctx.moveTo(dx * (r - 0.12), dy * (r - 0.12))
-      ctx.lineTo(dx * (r + 0.2) - dy * 0.3, dy * (r + 0.2) + dx * 0.3)
-      ctx.lineTo(dx * (r + 0.2) + dy * 0.3, dy * (r + 0.2) - dx * 0.3)
-      ctx.closePath()
-      ctx.fillStyle = isHold && !plain ? COLORS.touchHold[i]! : color
-      ctx.fill()
-      ctx.strokeStyle = COLORS.inner
-      ctx.lineWidth = 0.04
-      ctx.stroke()
+    if (isHold && !plain) {
+      // four quarters of a diamond, each in its own colour, closing in on the centre
+      const d = 0.6
+      const gap = 0.03 + state.spread * 0.7
+      COLORS.touchHold.forEach((c, i) => {
+        const sx = i % 2 === 0 ? -1 : 1
+        const sy = i < 2 ? 1 : -1
+        const ox = sx * gap
+        const oy = sy * gap
+        ctx.beginPath()
+        ctx.moveTo(ox, oy)
+        ctx.lineTo(ox + sx * d, oy)
+        ctx.lineTo(ox, oy + sy * d)
+        ctx.closePath()
+        ctx.fillStyle = c
+        ctx.fill()
+        ctx.strokeStyle = COLORS.inner
+        ctx.lineWidth = 0.04
+        ctx.lineJoin = 'round'
+        ctx.stroke()
+      })
+    } else {
+      for (let i = 0; i < 4; i++) {
+        // piece i sits up, right, down, left of the centre and points inward
+        const a = (i * Math.PI) / 2
+        const dx = Math.sin(a)
+        const dy = Math.cos(a)
+        ctx.beginPath()
+        ctx.moveTo(dx * (r - 0.1), dy * (r - 0.1))
+        ctx.lineTo(dx * (r + 0.26) - dy * 0.32, dy * (r + 0.26) + dx * 0.32)
+        ctx.lineTo(dx * (r + 0.26) + dy * 0.32, dy * (r + 0.26) - dx * 0.32)
+        ctx.closePath()
+        ctx.fillStyle = HOLLOW
+        ctx.fill()
+        this.band(color, 0.1, 0.03)
+      }
     }
-    ctx.fillStyle = COLORS.inner
+    ctx.fillStyle = isHold && !plain ? COLORS.inner : color
     ctx.beginPath()
-    ctx.arc(0, 0, 0.07, 0, Math.PI * 2)
+    ctx.arc(0, 0, 0.08, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
   }
@@ -751,16 +812,21 @@ export class Renderer {
     ctx.lineTo(state.head, -w)
     ctx.lineTo(state.tail, -w)
     ctx.closePath()
-    // a held note glows a little brighter
-    ctx.fillStyle = now >= p.time ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.25)'
+    const color = this.noteColor(note, false)
+    ctx.fillStyle = HOLLOW
     ctx.fill()
-    ctx.strokeStyle = this.noteColor(note, false)
-    ctx.lineWidth = 0.18 * state.scale
-    ctx.stroke()
-    ctx.shadowBlur = 0
-    ctx.strokeStyle = COLORS.inner
-    ctx.lineWidth = 0.05 * state.scale
-    ctx.stroke()
+    if (now >= p.time) {
+      // a held note lights up inside
+      ctx.globalAlpha = 0.18
+      ctx.fillStyle = color
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    this.band(color, 0.2 * state.scale, EDGE * state.scale)
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(state.head, 0, 0.09 * state.scale, 0, Math.PI * 2)
+    ctx.fill()
     ctx.restore()
   }
 
@@ -812,14 +878,32 @@ export class Renderer {
     }
     const t = (now - holdEnd) / HIT_EFFECT_SEC
     if (t < 0 || t > 1) return
-    ctx.strokeStyle = note.isBreak ? COLORS.break : COLORS.hit
-    ctx.globalAlpha = 1 - t
-    ctx.lineWidth = 0.12 * (1 - t) + 0.02
-    ctx.beginPath()
-    ctx.arc(pt.x, pt.y, NOTE_RADIUS * (0.8 + t * 0.9), 0, Math.PI * 2)
-    ctx.stroke()
-    ctx.globalAlpha = 1
+    this.drawHexBurst(pt.x, pt.y, t, this.noteColor(note, this.isStar(note)))
     if (note.isBreak) this.drawBurst(pt.x, pt.y, t, COLORS.break)
+  }
+
+  /** Hit effect: hexagon outlines growing out of a point and fading; t goes 0..1. */
+  private drawHexBurst(x: number, y: number, t: number, color: string) {
+    const { ctx } = this
+    const ease = 1 - Math.pow(1 - t, 2)
+    ctx.save()
+    ctx.strokeStyle = lighten(color, 0.3)
+    ctx.lineJoin = 'round'
+    ctx.globalAlpha = 1 - t
+    ctx.lineWidth = 0.07 * (1 - t) + 0.02
+    for (let k = 0; k < 3; k++) {
+      const r = NOTE_RADIUS * (0.7 + ease * (0.7 + k * 0.35))
+      const turn = k * 0.35 + ease * 0.4
+      ctx.beginPath()
+      for (let i = 0; i < 6; i++) {
+        const a = turn + (i * Math.PI) / 3
+        if (i === 0) ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a))
+        else ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a))
+      }
+      ctx.closePath()
+      ctx.stroke()
+    }
+    ctx.restore()
   }
 
   /** Rays flying out of a point, for breaks; t goes 0..1. */
