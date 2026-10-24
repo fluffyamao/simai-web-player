@@ -7,6 +7,7 @@
 // Connected slides split their time by arrow count, as in MajRadar's SlidePathResolver.
 import { buttonPoint, JUDGE_RADIUS, type Vec2 } from '../core/geometry'
 import { ARROW_DISTANCE, buildArrows, pathFromSlideCode, type Arrow } from '../core/slidePath'
+import { slideQueues } from '../core/slideJudge'
 import { slideCode, wrapButton } from '../core/slideShapes'
 import type { Note, SlidePath } from '../parser/types'
 
@@ -33,6 +34,17 @@ export interface WifiPart {
 
 export type SlidePart = PathPart | WifiPart
 
+/** A step of the slide's judge queue, placed in time for drawing. */
+export interface JudgeMark {
+  sensors: string[]
+  skippable: boolean
+  last: boolean
+  /** Number shown on the step, counting along the slide (wifi lanes count side by side). */
+  order: number
+  /** Fraction 0..1 of the slide's time at which the star has passed the step. */
+  at: number
+}
+
 export interface PreparedSlide {
   note: Note
   slide: SlidePath
@@ -43,6 +55,8 @@ export interface PreparedSlide {
   endTime: number
   isEach: boolean
   parts: SlidePart[]
+  /** Judge queue steps; empty when the game would reject the slide. */
+  judge: JudgeMark[]
 }
 
 /** Bars in a wifi slide; also its weight when chained (MajRadar counts 12). */
@@ -114,6 +128,28 @@ export function prepareSlides(notes: { note: Note; time: number }[]): PreparedSl
         }
       })
 
+      const judge: JudgeMark[] = []
+      const queues = slideQueues(note.location.index, slide)
+      let order = 0
+      queues?.forEach((lanes, i) => {
+        const part = parts[i]!
+        let longest = 0
+        for (const lane of lanes) {
+          const max = Math.max(1, lane[lane.length - 1]!.progressFinished)
+          lane.forEach((step, k) => {
+            judge.push({
+              sensors: step.sensors,
+              skippable: step.skippable,
+              last: step.last,
+              order: order + k + 1,
+              at: part.t0 + (part.t1 - part.t0) * (step.progressFinished / max),
+            })
+          })
+          longest = Math.max(longest, lane.length)
+        }
+        order += longest
+      })
+
       const startTime = time + slide.delay
       result.push({
         note,
@@ -123,6 +159,7 @@ export function prepareSlides(notes: { note: Note; time: number }[]): PreparedSl
         endTime: startTime + slide.duration,
         isEach: (perTime.get(Math.round(time * 1e6)) ?? 0) >= 2,
         parts,
+        judge,
       })
     }
   }

@@ -20,7 +20,7 @@ import {
   type TouchTiming,
 } from '../core/touch'
 import { noteKey } from '../core/noteKey'
-import { SENSOR_AREAS, sensorNames } from '../core/sensors'
+import { SENSOR_AREAS, sensorNames, type SensorArea } from '../core/sensors'
 import { noteEndTime } from '../parser/simai'
 import type { Chart, Note } from '../parser/types'
 import {
@@ -41,6 +41,22 @@ const FIREWORK_SEC = 1.2
 const SLIDE_END_SEC = 0.3
 /** How far each of the 11 wifi bars sits from the start, as a fraction of the way to the ends. */
 const WIFI_BAR_SCALES = [0.084, 0.148, 0.223, 0.301, 0.381, 0.48, 0.574, 0.668, 0.763, 0.856, 0.965]
+
+/** Sensor polygons by the names a judge step uses ("C" covers both halves). */
+const SENSOR_BY_NAME = new Map<string, SensorArea[]>()
+for (const a of SENSOR_AREAS) {
+  const key = a.name.startsWith('C') ? 'C' : a.name
+  SENSOR_BY_NAME.set(key, [...(SENSOR_BY_NAME.get(key) ?? []), a])
+}
+/** How long a judge step takes to fade once the star has passed it. */
+const JUDGE_FADE_SEC = 0.15
+const JUDGE_COLORS = {
+  step: 'rgba(90, 170, 255, 0.35)',
+  must: 'rgba(255, 160, 40, 0.6)',
+  last: 'rgba(255, 255, 255, 0.85)',
+}
+/** Step numbers of the slides on screen, told apart by colour. */
+const JUDGE_LABEL_COLORS = ['#ffffff', '#8ff0ff', '#ffb3e6', '#c8ff8a']
 
 /** How long a sensor stays lit after its touch ends. */
 const SENSOR_LIT_SEC = 0.15
@@ -119,6 +135,8 @@ export interface RenderOptions {
   noteColors?: ReadonlyMap<string, string> | null
   /** Outline the touch sensors (A1..E8, C) and light up the ones being touched. */
   showSensors?: boolean
+  /** Shade the sensors each slide is judged on, numbered in order; orange ones must be touched. */
+  showSlideJudge?: boolean
 }
 
 /** Where a note was drawn in the last frame, in world units, for hit testing. */
@@ -164,6 +182,7 @@ export class Renderer {
     ctx.setTransform(this.k, 0, 0, -this.k, size / 2, size / 2)
     this.drawField()
     if (opts.showSensors) this.drawSensors(chart, now)
+    if (opts.showSlideJudge && chart) this.drawSlideJudge(chart, now, opts.speed)
     this.hits = []
     this.colors = opts.noteColors ?? null
     if (!chart) return
@@ -273,6 +292,70 @@ export class Renderer {
       ctx.fillText(area.name, 0, 0)
       ctx.restore()
     }
+  }
+
+  /**
+   * Each visible slide's judge queue on the sensors: blue steps may be skipped, orange ones must
+   * be touched, the last step is outlined. Steps fade out once the star has passed them.
+   */
+  private drawSlideJudge(chart: PreparedChart, now: number, speed: number) {
+    const { ctx } = this
+    const marks = new Map<SensorArea, { fill: string; alpha: number; last: boolean; order: number; slide: number }[]>()
+    let slide = 0
+    for (const s of chart.slides) {
+      if (s.judge.length === 0 || now > s.endTime + JUDGE_FADE_SEC) continue
+      const shown = trackAlpha(s, now, Math.abs(speed * s.note.hspeed))
+      if (shown <= 0) continue
+      slide++
+      for (const step of s.judge) {
+        const passAt = s.startTime + (s.endTime - s.startTime) * step.at
+        const alpha = shown * Math.min(1, Math.max(0, 1 - (now - passAt) / JUDGE_FADE_SEC))
+        if (alpha <= 0) continue
+        for (const name of step.sensors) {
+          for (const area of SENSOR_BY_NAME.get(name) ?? []) {
+            const list = marks.get(area) ?? []
+            if (!marks.has(area)) marks.set(area, list)
+            list.push({ fill: step.skippable ? JUDGE_COLORS.step : JUDGE_COLORS.must, alpha, last: step.last, order: step.order, slide })
+          }
+        }
+      }
+    }
+    ctx.lineWidth = 0.05
+    ctx.lineJoin = 'round'
+    ctx.font = 'bold 0.26px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (const [area, list] of marks) {
+      ctx.beginPath()
+      area.points.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)))
+      ctx.closePath()
+      let top = 0
+      // one line of numbers per slide, each slide in its own colour
+      const lines = new Map<number, Set<number>>()
+      for (const m of list) {
+        ctx.globalAlpha = m.alpha
+        ctx.fillStyle = m.fill
+        ctx.fill()
+        if (m.last) {
+          ctx.strokeStyle = JUDGE_COLORS.last
+          ctx.stroke()
+        }
+        top = Math.max(top, m.alpha)
+        const line = lines.get(m.slide) ?? new Set<number>()
+        lines.set(m.slide, line.add(m.order))
+      }
+      ctx.globalAlpha = top
+      ctx.save()
+      ctx.translate(area.centre.x, area.centre.y)
+      ctx.scale(1, -1)
+      const rows = [...lines].sort((a, b) => a[0] - b[0])
+      rows.forEach(([slide, orders], i) => {
+        ctx.fillStyle = JUDGE_LABEL_COLORS[(slide - 1) % JUDGE_LABEL_COLORS.length]!
+        ctx.fillText([...orders].sort((a, b) => a - b).join('·'), 0, (i - (rows.length - 1) / 2) * 0.3)
+      })
+      ctx.restore()
+    }
+    ctx.globalAlpha = 1
   }
 
   private keyOf(note: Note): string {
