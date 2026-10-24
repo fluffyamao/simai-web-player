@@ -135,8 +135,10 @@ export interface RenderOptions {
   noteColors?: ReadonlyMap<string, string> | null
   /** Outline the touch sensors (A1..E8, C) and light up the ones being touched. */
   showSensors?: boolean
-  /** Shade the sensors each slide is judged on, numbered in order; orange ones must be touched. */
+  /** Shade the sensors each slide is judged on, numbered in order. */
   showSlideJudge?: boolean
+  /** With showSlideJudge, draw the steps that must be touched in orange instead of blue. */
+  showMustTouch?: boolean
 }
 
 /** Where a note was drawn in the last frame, in world units, for hit testing. */
@@ -182,7 +184,7 @@ export class Renderer {
     ctx.setTransform(this.k, 0, 0, -this.k, size / 2, size / 2)
     this.drawField()
     if (opts.showSensors) this.drawSensors(chart, now)
-    if (opts.showSlideJudge && chart) this.drawSlideJudge(chart, now, opts.speed)
+    if (opts.showSlideJudge && chart) this.drawSlideJudge(chart, now, opts.speed, opts.showMustTouch ?? false)
     this.hits = []
     this.colors = opts.noteColors ?? null
     if (!chart) return
@@ -295,10 +297,11 @@ export class Renderer {
   }
 
   /**
-   * Each visible slide's judge queue on the sensors: blue steps may be skipped, orange ones must
-   * be touched, the last step is outlined. Steps fade out once the star has passed them.
+   * Each visible slide's judge queue on the sensors in blue, with the steps that must be touched
+   * in orange when `must` is on; the last step is outlined. Steps fade out once the star has
+   * passed them.
    */
-  private drawSlideJudge(chart: PreparedChart, now: number, speed: number) {
+  private drawSlideJudge(chart: PreparedChart, now: number, speed: number, must: boolean) {
     const { ctx } = this
     const marks = new Map<SensorArea, { fill: string; alpha: number; last: boolean; order: number; slide: number }[]>()
     let slide = 0
@@ -315,7 +318,7 @@ export class Renderer {
           for (const area of SENSOR_BY_NAME.get(name) ?? []) {
             const list = marks.get(area) ?? []
             if (!marks.has(area)) marks.set(area, list)
-            list.push({ fill: step.skippable ? JUDGE_COLORS.step : JUDGE_COLORS.must, alpha, last: step.last, order: step.order, slide })
+            list.push({ fill: must && !step.skippable ? JUDGE_COLORS.must : JUDGE_COLORS.step, alpha, last: step.last, order: step.order, slide })
           }
         }
       }

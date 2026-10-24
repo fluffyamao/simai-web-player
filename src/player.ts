@@ -17,6 +17,8 @@ export interface PlayerOptions {
   showSensors?: boolean
   /** Shade the sensors each slide is judged on, as MajdataPlay's judge queues. Default false. */
   showSlideJudge?: boolean
+  /** With showSlideJudge, mark the steps that must be touched in orange. Default false. */
+  showMustTouch?: boolean
   /** Play synthesised hit sounds. Default true. */
   hitSounds?: boolean
   /** Hit sound volume, 0..1. Default 0.5. */
@@ -81,6 +83,7 @@ export class SimaiPlayer {
   private fireworks: boolean
   private showSensors: boolean
   private showSlideJudge: boolean
+  private showMustTouch: boolean
   private sounds = new HitSoundPlayer()
   private noteColors: Map<string, string> | null = null
   private frame = 0
@@ -103,6 +106,7 @@ export class SimaiPlayer {
     this.fireworks = options.fireworks ?? true
     this.showSensors = options.showSensors ?? false
     this.showSlideJudge = options.showSlideJudge ?? false
+    this.showMustTouch = options.showMustTouch ?? false
     this.sounds.enabled = options.hitSounds ?? true
     this.sounds.volume = options.hitSoundVolume ?? 0.5
     this.resizeObserver = new ResizeObserver(() => {
@@ -311,6 +315,12 @@ export class SimaiPlayer {
     this.dirty = true
   }
 
+  /** Mark the slide steps that must be touched in orange (with the slide judge overlay on). */
+  setShowMustTouch(enabled: boolean) {
+    this.showMustTouch = enabled
+    this.dirty = true
+  }
+
   /**
    * Draw particular notes in colours of your choice, keyed by noteKey() (e.g. to mark which
    * hand plays them). Slides take the colour of their star. Pass null to clear.
@@ -373,6 +383,7 @@ export class SimaiPlayer {
       noteColors: this.noteColors,
       showSensors: this.showSensors,
       showSlideJudge: this.showSlideJudge,
+      showMustTouch: this.showMustTouch,
     })
     for (const l of this.listeners) l(now)
   }
