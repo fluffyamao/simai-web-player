@@ -200,3 +200,20 @@ export function starOnPath(part: PathPart, local: number): { point: Vec2; angle:
     angle: Math.atan2(d1.y + (d2.y - d1.y) * u, d1.x + (d2.x - d1.x) * u),
   }
 }
+
+/**
+ * The track of a slide starting at button `start`, as polylines in world units: one per path
+ * segment, three (right, centre, left) for wifi. Null if a segment cannot be drawn.
+ */
+export function slideTrack(start: number, slide: SlidePath): Vec2[][] | null {
+  const lines: Vec2[][] = []
+  let from = start
+  for (const seg of slide.segments) {
+    const part = buildPart(from, seg)
+    if (!part) return null
+    if (part.kind === 'wifi') for (const end of part.ends) lines.push([part.start, end])
+    else lines.push(part.arrows.map((a) => a.point))
+    from = seg.vertices[seg.vertices.length - 1]!
+  }
+  return lines
+}
