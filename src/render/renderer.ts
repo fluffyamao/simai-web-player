@@ -19,6 +19,7 @@ import {
   touchTiming,
   type TouchTiming,
 } from '../core/touch'
+import { noteKey } from '../core/noteKey'
 import { noteEndTime } from '../parser/simai'
 import type { Chart, Note } from '../parser/types'
 import {
@@ -110,12 +111,25 @@ export interface RenderOptions {
   touchSpeed: number
   /** Draw the firework burst of touches marked `f`. */
   fireworks: boolean
+  /** Colours chosen for particular notes, by noteKey(); they replace the usual colours. */
+  noteColors?: ReadonlyMap<string, string> | null
+}
+
+/** Where a note was drawn in the last frame, in world units, for hit testing. */
+interface Hit {
+  key: string
+  x: number
+  y: number
+  r: number
 }
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D
   /** Pixels per world unit. */
   private k = 1
+  private colors: ReadonlyMap<string, string> | null = null
+  private hits: Hit[] = []
+  private keys = new WeakMap<Note, string>()
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d')
@@ -143,6 +157,8 @@ export class Renderer {
     // world space: origin at centre, y up, 1 unit = 1 world unit
     ctx.setTransform(this.k, 0, 0, -this.k, size / 2, size / 2)
     this.drawField()
+    this.hits = []
+    this.colors = opts.noteColors ?? null
     if (!chart) return
 
     // slide tracks under everything else, later slides underneath
@@ -224,7 +240,50 @@ export class Renderer {
     }
   }
 
+  private keyOf(note: Note): string {
+    let key = this.keys.get(note)
+    if (!key) {
+      key = noteKey(note)
+      this.keys.set(note, key)
+    }
+    return key
+  }
+
+  /** The colour the author picked for this note, if any. */
+  private custom(note: Note): string | undefined {
+    return this.colors?.get(this.keyOf(note))
+  }
+
+  private hit(note: Note, x: number, y: number, r: number) {
+    this.hits.push({ key: this.keyOf(note), x, y, r })
+  }
+
+  /** The note drawn nearest to a point on the canvas (fractions 0..1 of its size), if any. */
+  hitTest(fx: number, fy: number): string | null {
+    const x = (fx - 0.5) * 2 * VIEW_RADIUS
+    const y = -(fy - 0.5) * 2 * VIEW_RADIUS
+    let best: Hit | null = null
+    let bestD = Infinity
+    for (const h of this.hits) {
+      const d = Math.hypot(h.x - x, h.y - y)
+      if (d <= h.r + 0.25 && d < bestD) {
+        best = h
+        bestD = d
+      }
+    }
+    return best?.key ?? null
+  }
+
+  /** Notes drawn inside a rectangle given in canvas fractions. */
+  notesIn(fx1: number, fy1: number, fx2: number, fy2: number): string[] {
+    const [x1, x2] = [fx1, fx2].map((f) => (f - 0.5) * 2 * VIEW_RADIUS).sort((a, b) => a - b) as [number, number]
+    const [y1, y2] = [fy1, fy2].map((f) => -(f - 0.5) * 2 * VIEW_RADIUS).sort((a, b) => a - b) as [number, number]
+    return [...new Set(this.hits.filter((h) => h.x >= x1 && h.x <= x2 && h.y >= y1 && h.y <= y2).map((h) => h.key))]
+  }
+
   private noteColor(note: Note, star: boolean): string {
+    const custom = this.custom(note)
+    if (custom) return custom
     if (note.isMine) return COLORS.mine
     if (note.isBreak) return COLORS.break
     if (note.isEach) return COLORS.each
@@ -256,6 +315,8 @@ export class Renderer {
     const { ctx } = this
     const { note } = p
     const star = this.isStar(note)
+    const at = buttonPoint(note.location.index, state.distance)
+    this.hit(note, at.x, at.y, NOTE_RADIUS * state.scale)
     this.enterLane(note.location.index)
     ctx.translate(state.distance, 0)
     ctx.scale(state.scale, state.scale)
@@ -297,6 +358,8 @@ export class Renderer {
   }
 
   private slideColor(s: PreparedSlide): string {
+    const custom = this.custom(s.note)
+    if (custom) return custom
     if (s.note.isMine) return COLORS.mine
     if (s.slide.isBreak) return COLORS.break
     if (s.isEach) return COLORS.each
@@ -402,6 +465,7 @@ export class Renderer {
     const local = this.partProgress(s, part, now)
     if (part.kind === 'path') {
       const { point, angle } = starOnPath(part, local)
+      this.hit(s.note, point.x, point.y, NOTE_RADIUS)
       this.drawStarAt(point.x, point.y, angle, 1, 1, color)
     } else {
       for (const end of part.ends) {
@@ -433,6 +497,8 @@ export class Renderer {
   }
 
   private touchColor(note: Note): string {
+    const custom = this.custom(note)
+    if (custom) return custom
     if (note.isMine) return COLORS.mine
     if (note.isBreak) return COLORS.break
     if (note.isEach) return COLORS.each
@@ -460,6 +526,7 @@ export class Renderer {
     }
     const state = touchState(now - p.time, timing)
     if (!state) return
+    this.hit(note, pos.x, pos.y, 0.65)
     const isHold = note.kind === 'touchHold'
     const plain = note.isBreak || note.isMine
     const color = this.touchColor(note)
@@ -549,6 +616,10 @@ export class Renderer {
     const { ctx } = this
     const w = (NOTE_RADIUS - 0.09) * state.scale
     const tip = w * 0.75
+    for (const d of [state.head, (state.head + state.tail) / 2, state.tail]) {
+      const at = buttonPoint(note.location.index, d)
+      this.hit(note, at.x, at.y, NOTE_RADIUS * state.scale)
+    }
     this.enterLane(note.location.index)
     this.applyExGlow(note)
     ctx.beginPath()

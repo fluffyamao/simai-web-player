@@ -76,6 +76,7 @@ export class SimaiPlayer {
   private touchSpeed: number
   private fireworks: boolean
   private sounds = new HitSoundPlayer()
+  private noteColors: Map<string, string> | null = null
   private frame = 0
   private dirty = true
   private lastTime = -1
@@ -290,6 +291,25 @@ export class SimaiPlayer {
     this.dirty = true
   }
 
+  /**
+   * Draw particular notes in colours of your choice, keyed by noteKey() (e.g. to mark which
+   * hand plays them). Slides take the colour of their star. Pass null to clear.
+   */
+  setNoteColors(colors: Record<string, string> | null) {
+    this.noteColors = colors ? new Map(Object.entries(colors)) : null
+    this.dirty = true
+  }
+
+  /** The key of the note drawn at a point of the canvas (fractions 0..1), if any. */
+  noteAt(x: number, y: number): string | null {
+    return this.renderer.hitTest(x, y)
+  }
+
+  /** Keys of the notes drawn inside a rectangle of the canvas (fractions 0..1). */
+  notesIn(x1: number, y1: number, x2: number, y2: number): string[] {
+    return this.renderer.notesIn(x1, y1, x2, y2)
+  }
+
   /** Turn hit sounds on or off, optionally setting the volume (0..1). */
   setHitSounds(enabled: boolean, volume?: number) {
     this.sounds.enabled = enabled
@@ -330,6 +350,7 @@ export class SimaiPlayer {
       speed: this.speed,
       touchSpeed: this.touchSpeed,
       fireworks: this.fireworks,
+      noteColors: this.noteColors,
     })
     for (const l of this.listeners) l(now)
   }
