@@ -27,7 +27,7 @@ are tested against the official prefab counts. Not handled yet: pseudo-each (`` 
 ## Usage
 
 ```ts
-import { attachProgressBar, parseMaidata, SimaiPlayer } from 'simai-web-player'
+import { attachProgressBar, attachShuttleButton, parseMaidata, SimaiPlayer } from 'simai-web-player'
 
 const player = new SimaiPlayer(canvas, {
   tapSpeed: 7.5,
@@ -54,6 +54,10 @@ player.onTime((t) => { /* every frame while time changes */ })
 attachProgressBar(player, bar, { onFineChange: (factor) => { /* show a hint */ } })
 
 player.stepNote(1)        // jump to the next note (-1: previous)
+// hold-to-move buttons: half speed backwards / forwards while held (audio pauses meanwhile,
+// since browsers cannot play audio in reverse); or call player.startShuttle(rate) / stopShuttle()
+attachShuttleButton(player, backButton, -0.5)
+attachShuttleButton(player, forwardButton, 0.5)
 // also built in: drag left/right on the chart (full width = 2 s, Shift for finer),
 // mouse wheel over the chart steps note by note (turn off with canvasControls: false)
 ```

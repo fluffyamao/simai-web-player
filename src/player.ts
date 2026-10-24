@@ -85,6 +85,8 @@ export class SimaiPlayer {
   private noteTimes: number[] = []
   private stepTimer: ReturnType<typeof setTimeout> | undefined
   private detachCanvas: () => void = () => {}
+  /** Hold-to-play forwards (+) or backwards (-): rate in chart seconds per second, from a start point. */
+  private shuttle: { rate: number; fromTime: number; fromWall: number } | null = null
   private resizeObserver: ResizeObserver
 
   constructor(readonly canvas: HTMLCanvasElement, options: PlayerOptions = {}) {
@@ -110,6 +112,7 @@ export class SimaiPlayer {
 
   /** The time being shown: the playback clock, or the scrub position while scrubbing. */
   get currentTime(): number {
+    if (this.shuttle) return this.shuttlePosition(this.shuttle)
     return this.scrub ? this.scrub.shown : (this.clock?.now() ?? 0)
   }
 
@@ -209,11 +212,37 @@ export class SimaiPlayer {
     this.scrub.target = Math.min(Math.max(time, 0), duration > 0 ? duration : Infinity)
   }
 
+  /**
+   * Start moving through the chart at `rate` (e.g. 0.5 forwards, -0.5 backwards) until
+   * stopShuttle(). Audio cannot play backwards, so audio and hit sounds pause meanwhile
+   * and only the chart moves; afterwards playback resumes if it was playing.
+   */
+  startShuttle(rate: number) {
+    this.beginScrub()
+    if (!this.scrub) return
+    this.scrub.target = this.scrub.shown
+    this.shuttle = { rate, fromTime: this.scrub.shown, fromWall: performance.now() }
+  }
+
+  stopShuttle() {
+    if (!this.shuttle || !this.scrub) return
+    this.scrub.target = this.shuttlePosition(this.shuttle)
+    this.endScrub()
+  }
+
+  /** Where a shuttle is now: computed from elapsed time, so slow frames do not slow it down. */
+  private shuttlePosition(s: { rate: number; fromTime: number; fromWall: number }): number {
+    const end = this.duration > 0 ? this.duration : Infinity
+    const t = s.fromTime + (s.rate * (performance.now() - s.fromWall)) / 1000
+    return Math.min(Math.max(t, 0), end)
+  }
+
   /** Finish dragging: jump to where the user let go and resume if it was playing. */
   endScrub() {
     const scrub = this.scrub
     if (!scrub) return
     this.scrub = null
+    this.shuttle = null
     this.clock?.seek(scrub.target)
     this.sounds.reset()
     this.dirty = true
@@ -366,6 +395,11 @@ export class SimaiPlayer {
     const frame = performance.now()
     const dt = Math.min((frame - scrub.lastFrame) / 1000, 0.1)
     scrub.lastFrame = frame
+    if (this.shuttle) {
+      // shuttling moves the chart itself at a steady speed, no smoothing needed
+      scrub.target = scrub.shown = this.shuttlePosition(this.shuttle)
+      return
+    }
     let gap = scrub.target - scrub.shown
     if (Math.abs(gap) > SCRUB_MAX_GLIDE) {
       scrub.shown = scrub.target - Math.sign(gap) * SCRUB_MAX_GLIDE

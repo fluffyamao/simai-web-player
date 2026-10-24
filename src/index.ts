@@ -2,6 +2,7 @@
 export { SimaiPlayer } from './player'
 export type { LoadOptions, PlayerOptions } from './player'
 export { attachProgressBar } from './ui/progressBar'
+export { attachShuttleButton } from './ui/shuttle'
 export type { ProgressBarOptions } from './ui/progressBar'
 export { parseMaidata, DIFFICULTY_NAMES } from './parser/maidata'
 export { parseSimai, noteEndTime } from './parser/simai'

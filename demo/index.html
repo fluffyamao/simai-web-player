@@ -12,6 +12,7 @@
       .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
       .row input[type=range] { flex: 1; min-width: 160px; }
       button, select, input { font: inherit; }
+      #back, #fwd { touch-action: none; user-select: none; -webkit-user-select: none; }
       #info { font-size: 14px; color: #8f9ab3; }
       #errors { font-size: 13px; color: #ff9b7a; white-space: pre-wrap; }
     </style>
@@ -25,7 +26,9 @@
       <div id="info">选择一个包含 maidata.txt 和 track.mp3 的文件夹（或用 ?song=文件夹名 读取 demo/samples/ 下的谱面）</div>
       <canvas id="view"></canvas>
       <div class="row">
+        <button id="back" title="按住以 0.5 倍速倒放">◀ 0.5×</button>
         <button id="play">播放</button>
+        <button id="fwd" title="按住以 0.5 倍速前进">0.5× ▶</button>
         <input id="seek" type="range" min="0" max="1" step="0.0001" value="0" />
         <span id="time">0:00.00</span>
       </div>

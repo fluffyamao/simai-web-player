@@ -1,4 +1,4 @@
-import { attachProgressBar, DIFFICULTY_NAMES, parseMaidata, SimaiPlayer, type Maidata } from '../src'
+import { attachProgressBar, attachShuttleButton, DIFFICULTY_NAMES, parseMaidata, SimaiPlayer, type Maidata } from '../src'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const canvas = $<HTMLCanvasElement>('view')
@@ -20,6 +20,10 @@ const fineHint = $('fineHint')
 const player = new SimaiPlayer(canvas)
 // handy for poking at it from the devtools console
 Object.assign(window, { player })
+
+// hold to move through the chart at half speed, backwards or forwards
+attachShuttleButton(player, $('back'), -0.5)
+attachShuttleButton(player, $('fwd'), 0.5)
 let maidata: Maidata | null = null
 let audioUrl: string | undefined
 
