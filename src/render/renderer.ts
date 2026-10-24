@@ -796,23 +796,45 @@ export class Renderer {
     const state = holdState(now - p.time, note.length, speed)
     if (!state) return
     const { ctx } = this
-    const w = (NOTE_RADIUS - 0.09) * state.scale
-    const tip = w * 0.75
+    // a regular hexagon around each end, stretched along the lane by the hold's length:
+    // when it first appears (no length yet) it is a hexagon the size of a tap
+    const r = (NOTE_RADIUS - 0.1) * state.scale
+    const half = r / 2
+    const w = r * (Math.sqrt(3) / 2)
     for (const d of [state.head, (state.head + state.tail) / 2, state.tail]) {
       const at = buttonPoint(note.location.index, d)
       this.hit(note, at.x, at.y, NOTE_RADIUS * state.scale)
     }
     this.enterLane(note.location.index)
     this.applyExGlow(note)
-    ctx.beginPath()
-    ctx.moveTo(state.tail - tip, 0)
-    ctx.lineTo(state.tail, w)
-    ctx.lineTo(state.head, w)
-    ctx.lineTo(state.head + tip, 0)
-    ctx.lineTo(state.head, -w)
-    ctx.lineTo(state.tail, -w)
-    ctx.closePath()
     const color = this.noteColor(note, false)
+    const corners: [number, number][] = [
+      [state.tail - r, 0],
+      [state.tail - half, w],
+      [state.head + half, w],
+      [state.head + r, 0],
+      [state.head + half, -w],
+      [state.tail - half, -w],
+    ]
+    const outline = (grow: number) => {
+      ctx.beginPath()
+      corners.forEach(([x, y], i) => {
+        // pushing every side out by `grow` moves the end corners 2/√3 and the others 1/√3 sideways
+        const gx = x + Math.sign(x - (state.head + state.tail) / 2) * grow * (y === 0 ? 2 : 1) / Math.sqrt(3)
+        const gy = y + Math.sign(y) * grow
+        if (i === 0) ctx.moveTo(gx, gy)
+        else ctx.lineTo(gx, gy)
+      })
+      ctx.closePath()
+    }
+    if (note.isEach && !note.isBreak && !note.isMine) {
+      // each notes carry a soft halo, as taps do
+      outline(0.21 * state.scale)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)'
+      ctx.lineWidth = 0.1 * state.scale
+      ctx.stroke()
+    }
+    outline(0)
     ctx.fillStyle = HOLLOW
     ctx.fill()
     if (now >= p.time) {
@@ -823,6 +845,18 @@ export class Renderer {
       ctx.globalAlpha = 1
     }
     this.band(color, 0.2 * state.scale, EDGE * state.scale)
+    // light highlights on the two long sides, like the ones on a tap ring
+    ctx.strokeStyle = lighten(color, 0.45)
+    ctx.lineWidth = 0.12 * state.scale
+    ctx.lineCap = 'butt'
+    for (const [a, b] of [[corners[1]!, corners[2]!], [corners[4]!, corners[5]!]] as const) {
+      const ax = a[0] + (b[0] - a[0]) * 0.15
+      const bx = a[0] + (b[0] - a[0]) * 0.55
+      ctx.beginPath()
+      ctx.moveTo(ax, a[1])
+      ctx.lineTo(bx, b[1])
+      ctx.stroke()
+    }
     ctx.fillStyle = color
     ctx.beginPath()
     ctx.arc(state.head, 0, 0.09 * state.scale, 0, Math.PI * 2)
