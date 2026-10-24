@@ -1,4 +1,4 @@
-import { DIFFICULTY_NAMES, parseMaidata, SimaiPlayer, type Maidata } from '../src'
+import { attachProgressBar, DIFFICULTY_NAMES, parseMaidata, SimaiPlayer, type Maidata } from '../src'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const canvas = $<HTMLCanvasElement>('view')
@@ -15,6 +15,7 @@ const touchSpeed = $<HTMLInputElement>('touchSpeed')
 const fireworks = $<HTMLInputElement>('fireworks')
 const hitSounds = $<HTMLInputElement>('hitSounds')
 const hitVolume = $<HTMLInputElement>('hitVolume')
+const fineHint = $('fineHint')
 
 const player = new SimaiPlayer(canvas)
 // handy for poking at it from the devtools console
@@ -74,11 +75,12 @@ playBtn.addEventListener('click', async () => {
   playBtn.textContent = player.playing ? '暂停' : '播放'
 })
 
-// dragging the bar scrubs: the chart follows forwards and backwards, audio resumes on release
-seek.addEventListener('pointerdown', () => player.beginScrub())
-seek.addEventListener('input', () => player.scrubTo(Number(seek.value) * player.duration))
-seek.addEventListener('change', () => player.endScrub())
-seek.addEventListener('pointerup', () => player.endScrub())
+// drag along the bar to jump; move the pointer up/down away from it while holding for fine control
+attachProgressBar(player, seek, {
+  onFineChange: (factor) => {
+    fineHint.textContent = factor && factor < 1 ? `精细拖动 ×1/${Math.round(1 / factor)}` : ''
+  },
+})
 
 rate.addEventListener('change', () => player.setRate(Number(rate.value)))
 tapSpeed.addEventListener('change', () => player.setTapSpeed(Number(tapSpeed.value)))
@@ -91,18 +93,22 @@ hitVolume.addEventListener('input', applyHitSounds)
 player.onTime((t) => {
   timeLabel.textContent = fmt(t)
   if (player.scrubbing) return
-  if (player.duration > 0) seek.value = String(t / player.duration)
   playBtn.textContent = player.playing ? '暂停' : '播放'
 })
 
 document.addEventListener('keydown', async (e) => {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
+  // let text fields and menus have their keys; the progress bar keeps its own arrow keys
+  if (e.target instanceof HTMLSelectElement) return
+  if (e.target instanceof HTMLInputElement && !['range', 'checkbox'].includes(e.target.type)) return
+  if (e.target === seek && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return
   if (e.code === 'Space') {
     e.preventDefault()
     await player.toggle()
     playBtn.textContent = player.playing ? '暂停' : '播放'
   } else if (e.code === 'ArrowLeft') player.seek(player.currentTime - 2)
   else if (e.code === 'ArrowRight') player.seek(player.currentTime + 2)
+  else if (e.code === 'Comma') player.stepNote(-1)
+  else if (e.code === 'Period') player.stepNote(1)
 })
 
 // ?song=<folder> loads demo/samples/<folder>/ from the dev server

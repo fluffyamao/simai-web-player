@@ -27,7 +27,7 @@ are tested against the official prefab counts. Not handled yet: pseudo-each (`` 
 ## Usage
 
 ```ts
-import { parseMaidata, SimaiPlayer } from 'simai-web-player'
+import { attachProgressBar, parseMaidata, SimaiPlayer } from 'simai-web-player'
 
 const player = new SimaiPlayer(canvas, {
   tapSpeed: 7.5,
@@ -48,11 +48,14 @@ player.setFireworks(false) // hide the burst of `f` touches
 player.setHitSounds(true, 0.3)
 player.onTime((t) => { /* every frame while time changes */ })
 
-// progress bar: while dragging, audio pauses and the chart follows smoothly,
-// running backwards when dragged back; playback resumes on release
-bar.addEventListener('pointerdown', () => player.beginScrub())
-bar.addEventListener('input', () => player.scrubTo(bar.valueAsNumber))
-bar.addEventListener('change', () => player.endScrub())
+// progress bar (<input type="range" min="0" max="1">): drag along it to jump anywhere;
+// while holding, move the pointer up/down away from it for 1/4 and 1/16 precision.
+// Audio pauses while dragging and the chart follows, running backwards when dragged back.
+attachProgressBar(player, bar, { onFineChange: (factor) => { /* show a hint */ } })
+
+player.stepNote(1)        // jump to the next note (-1: previous)
+// also built in: drag left/right on the chart (full width = 2 s, Shift for finer),
+// mouse wheel over the chart steps note by note (turn off with canvasControls: false)
 ```
 
 `player.chart.errors` lists any parse errors with line and column.

@@ -17,6 +17,11 @@ export interface PlayerOptions {
   hitSounds?: boolean
   /** Hit sound volume, 0..1. Default 0.5. */
   hitSoundVolume?: number
+  /**
+   * Scrub by dragging left/right on the chart (the canvas width spans 2 seconds, Shift for
+   * finer) and step note by note with the mouse wheel. Default true.
+   */
+  canvasControls?: boolean
 }
 
 export interface LoadOptions {
@@ -36,6 +41,12 @@ type TimeListener = (time: number) => void
 const SCRUB_SMOOTHING = 0.05
 /** A scrub further than this jumps most of the way at once instead of fast-forwarding. */
 const SCRUB_MAX_GLIDE = 3
+/** Seconds covered by dragging across the full width of the chart. */
+const CANVAS_DRAG_SECONDS = 2
+/** Pointer travel before a press on the chart becomes a drag. */
+const DRAG_THRESHOLD_PX = 3
+/** A wheel or keyboard step ends its scrub after this much quiet. */
+const STEP_SETTLE_MS = 250
 
 interface Scrub {
   /** Where the user is dragging to. */
@@ -70,6 +81,10 @@ export class SimaiPlayer {
   private lastTime = -1
   private listeners = new Set<TimeListener>()
   private scrub: Scrub | null = null
+  /** Sorted unique audio times of notes and slide starts, for stepping. */
+  private noteTimes: number[] = []
+  private stepTimer: ReturnType<typeof setTimeout> | undefined
+  private detachCanvas: () => void = () => {}
   private resizeObserver: ResizeObserver
 
   constructor(readonly canvas: HTMLCanvasElement, options: PlayerOptions = {}) {
@@ -84,6 +99,7 @@ export class SimaiPlayer {
     })
     this.resizeObserver.observe(canvas)
     this.renderer.resize()
+    if (options.canvasControls ?? true) this.detachCanvas = this.attachCanvasControls()
     this.frame = requestAnimationFrame(this.tick)
   }
 
@@ -139,6 +155,10 @@ export class SimaiPlayer {
 
     this._chart = chart
     this.prepared = prepareChart(chart, first)
+    const times = new Set<number>()
+    for (const p of this.prepared.notes) times.add(Math.round(p.time * 1000) / 1000)
+    for (const s of this.prepared.slides) times.add(Math.round(s.startTime * 1000) / 1000)
+    this.noteTimes = [...times].sort((a, b) => a - b)
     this.updateSoundEvents()
     this.dirty = true
     return chart
@@ -200,6 +220,25 @@ export class SimaiPlayer {
     if (scrub.wasPlaying) void this.play()
   }
 
+  /**
+   * Jump to the previous (-1) or next (+1) moment where a note is hit or a slide starts.
+   * Pauses playback, since stepping is for precise positioning.
+   */
+  stepNote(direction: 1 | -1) {
+    if (!this.clock || this.noteTimes.length === 0) return
+    if (this.playing && !this.scrub) this.pause()
+    const from = this.scrub ? this.scrub.target : this.clock.now()
+    const times = this.noteTimes
+    let to: number | undefined
+    if (direction > 0) to = times.find((t) => t > from + 0.001)
+    else for (let i = times.length - 1; i >= 0 && to === undefined; i--) if (times[i]! < from - 0.001) to = times[i]
+    if (to === undefined) return
+    this.scrubTo(to)
+    if (this.scrub) this.scrub.wasPlaying = false
+    clearTimeout(this.stepTimer)
+    this.stepTimer = setTimeout(() => this.endScrub(), STEP_SETTLE_MS)
+  }
+
   /** Playback speed, e.g. 0.5 for half speed. Pitch is kept when audio is used. */
   setRate(rate: number) {
     this.clock?.setRate(rate)
@@ -241,6 +280,8 @@ export class SimaiPlayer {
 
   destroy() {
     cancelAnimationFrame(this.frame)
+    clearTimeout(this.stepTimer)
+    this.detachCanvas()
     this.resizeObserver.disconnect()
     if (this.ownsAudio) this.clock?.destroy()
     else this.clock?.pause()
@@ -262,6 +303,62 @@ export class SimaiPlayer {
       fireworks: this.fireworks,
     })
     for (const l of this.listeners) l(now)
+  }
+
+  private attachCanvasControls(): () => void {
+    const canvas = this.canvas
+    // vertical swipes still scroll the page on touch screens
+    canvas.style.touchAction = 'pan-y'
+    let press: { id: number; x: number; time: number; fine: boolean; dragging: boolean } | null = null
+
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0 || !this.clock) return
+      press = { id: e.pointerId, x: e.clientX, time: this.currentTime, fine: e.shiftKey, dragging: false }
+      try {
+        canvas.setPointerCapture(e.pointerId)
+      } catch {
+        // synthetic events have no capturable pointer
+      }
+    }
+    const move = (e: PointerEvent) => {
+      if (!press || e.pointerId !== press.id) return
+      if (!press.dragging) {
+        if (Math.abs(e.clientX - press.x) < DRAG_THRESHOLD_PX) return
+        press.dragging = true
+        this.beginScrub()
+      }
+      const secondsPerPx = (fine: boolean) => (CANVAS_DRAG_SECONDS / canvas.clientWidth) * (fine ? 0.25 : 1)
+      if (e.shiftKey !== press.fine) {
+        // re-anchor when Shift changes so the position does not jump
+        press.time += (e.clientX - press.x) * secondsPerPx(press.fine)
+        press.x = e.clientX
+        press.fine = e.shiftKey
+      }
+      this.scrubTo(press.time + (e.clientX - press.x) * secondsPerPx(press.fine))
+    }
+    const up = (e: PointerEvent) => {
+      if (!press || e.pointerId !== press.id) return
+      if (press.dragging) this.endScrub()
+      press = null
+    }
+    const wheel = (e: WheelEvent) => {
+      if (e.deltaY === 0 || !this.clock) return
+      e.preventDefault()
+      this.stepNote(e.deltaY > 0 ? 1 : -1)
+    }
+
+    canvas.addEventListener('pointerdown', down)
+    canvas.addEventListener('pointermove', move)
+    canvas.addEventListener('pointerup', up)
+    canvas.addEventListener('pointercancel', up)
+    canvas.addEventListener('wheel', wheel, { passive: false })
+    return () => {
+      canvas.removeEventListener('pointerdown', down)
+      canvas.removeEventListener('pointermove', move)
+      canvas.removeEventListener('pointerup', up)
+      canvas.removeEventListener('pointercancel', up)
+      canvas.removeEventListener('wheel', wheel)
+    }
   }
 
   /** Move the shown scrub time towards its target, frame-rate independent. */

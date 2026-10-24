@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 export { SimaiPlayer } from './player'
 export type { LoadOptions, PlayerOptions } from './player'
+export { attachProgressBar } from './ui/progressBar'
+export type { ProgressBarOptions } from './ui/progressBar'
 export { parseMaidata, DIFFICULTY_NAMES } from './parser/maidata'
 export { parseSimai, noteEndTime } from './parser/simai'
 export type { ParseOptions } from './parser/simai'
