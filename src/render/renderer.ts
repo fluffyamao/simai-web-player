@@ -845,18 +845,6 @@ export class Renderer {
       ctx.globalAlpha = 1
     }
     this.band(color, 0.2 * state.scale, EDGE * state.scale)
-    // light highlights on the two long sides, like the ones on a tap ring
-    ctx.strokeStyle = lighten(color, 0.45)
-    ctx.lineWidth = 0.12 * state.scale
-    ctx.lineCap = 'butt'
-    for (const [a, b] of [[corners[1]!, corners[2]!], [corners[4]!, corners[5]!]] as const) {
-      const ax = a[0] + (b[0] - a[0]) * 0.15
-      const bx = a[0] + (b[0] - a[0]) * 0.55
-      ctx.beginPath()
-      ctx.moveTo(ax, a[1])
-      ctx.lineTo(bx, b[1])
-      ctx.stroke()
-    }
     ctx.fillStyle = color
     ctx.beginPath()
     ctx.arc(state.head, 0, 0.09 * state.scale, 0, Math.PI * 2)
