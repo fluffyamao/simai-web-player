@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Outline of the 33 touch sensors, for the sensor overlay (MajdataPlay's Debug.DisplaySensor).
-// MajdataPlay ships the shapes as baked meshes; these are polar approximations that put every
-// area where the game puts it, in world units with y up.
+// Outlines of the 34 touch sensors, for the sensor overlay (MajdataPlay's Debug.DisplaySensor).
+// Taken from MajdataPlay (GPL-3.0): the border meshes in Assets/Models/JudgeAreaBorders/*.asset,
+// placed by each sensor's transform in Assets/Scenes/Init.unity (JudgeAreas scaled by 2.1432761).
+// World units, y up; each outline runs through the middle of the drawn border.
 import type { Vec2 } from './geometry'
-import { touchPosition } from './touch'
 
 export interface SensorArea {
-  /** "A1" .. "E8", or "C" */
+  /** "A1" .. "E8", "C1" or "C2" */
   name: string
   /** closed outline */
   points: Vec2[]
@@ -15,51 +15,58 @@ export interface SensorArea {
   centre: Vec2
 }
 
-const C_RADIUS = 1.15
-const B_OUTER = 3.0
-const A_OUTER = 4.8
-const STEP = Math.PI / 4
-
-/** Angle of button / A / B sensor n (1..8); D / E sensors sit half a step anticlockwise. */
-const buttonAngle = (n: number) => -n * STEP + (Math.PI * 5) / 8
-
-const polar = (r: number, a: number): Vec2 => ({ x: r * Math.cos(a), y: r * Math.sin(a) })
-
-/** Annular sector from r1 to r2 between angles a1 and a2 (a1 > a2, clockwise). */
-function sector(r1: number, r2: number, a1: number, a2: number, segments = 8): Vec2[] {
-  const out: Vec2[] = []
-  for (let i = 0; i <= segments; i++) out.push(polar(r2, a1 + ((a2 - a1) * i) / segments))
-  for (let i = segments; i >= 0; i--) out.push(polar(r1, a1 + ((a2 - a1) * i) / segments))
-  return out
+/** x, y pairs */
+const OUTLINES: Record<string, number[]> = {
+  C1: [1.012, 0.42, 1.012, -0.419, 0.42, -1.008, 0.086, -1.008, 0.086, 1.006, 0.42, 1.006],
+  C2: [-1.012, 0.42, -1.012, -0.419, -0.42, -1.008, -0.086, -1.008, -0.086, 1.006, -0.42, 1.006],
+  B1: [0.597, 2.764, 1.087, 2.563, 1.526, 2.381, 1.52, 1.616, 1.392, 1.488, 1.288, 1.384, 0.565, 1.387, 0.405, 1.546, 0.232, 1.719, 0.072, 1.879, 0.069, 2.237, 0.543, 2.711],
+  B2: [2.377, 1.533, 2.581, 1.043, 2.763, 0.604, 2.218, 0.068, 2.036, 0.068, 1.889, 0.068, 1.38, 0.581, 1.38, 0.807, 1.38, 1.052, 1.38, 1.278, 1.63, 1.533, 2.301, 1.533],
+  B3: [2.764, -0.597, 2.563, -1.087, 2.381, -1.526, 1.616, -1.52, 1.488, -1.392, 1.384, -1.288, 1.387, -0.565, 1.546, -0.405, 1.719, -0.232, 1.879, -0.072, 2.237, -0.069, 2.711, -0.543],
+  B4: [1.533, -2.377, 1.043, -2.581, 0.604, -2.763, 0.068, -2.218, 0.068, -2.036, 0.068, -1.889, 0.581, -1.38, 0.807, -1.38, 1.052, -1.38, 1.278, -1.38, 1.533, -1.63, 1.533, -2.301],
+  B5: [-0.597, -2.764, -1.087, -2.563, -1.526, -2.381, -1.52, -1.616, -1.391, -1.488, -1.288, -1.384, -0.565, -1.387, -0.405, -1.546, -0.232, -1.719, -0.072, -1.879, -0.069, -2.237, -0.543, -2.711],
+  B6: [-2.377, -1.533, -2.581, -1.044, -2.763, -0.604, -2.218, -0.068, -2.036, -0.068, -1.889, -0.068, -1.38, -0.581, -1.38, -0.807, -1.38, -1.052, -1.38, -1.278, -1.63, -1.533, -2.301, -1.533],
+  B7: [-2.764, 0.597, -2.563, 1.087, -2.381, 1.526, -1.616, 1.52, -1.488, 1.391, -1.384, 1.288, -1.387, 0.565, -1.546, 0.405, -1.719, 0.232, -1.879, 0.072, -2.237, 0.069, -2.711, 0.543],
+  B8: [-1.533, 2.377, -1.043, 2.581, -0.604, 2.763, -0.068, 2.218, -0.068, 2.036, -0.068, 1.889, -0.581, 1.38, -0.807, 1.38, -1.052, 1.38, -1.278, 1.38, -1.533, 1.63, -1.533, 2.301],
+  A1: [0.552, 3.422, 0.815, 5.253, 1.239, 5.162, 2.098, 4.886, 2.858, 4.488, 3.151, 4.28, 2.032, 2.809, 1.55, 2.811, 1.401, 2.875, 1.247, 2.94, 1.061, 3.017, 0.88, 3.092],
+  A2: [2.81, 2.03, 4.291, 3.138, 4.526, 2.774, 4.939, 1.971, 5.195, 1.153, 5.255, 0.798, 3.423, 0.55, 3.084, 0.892, 3.023, 1.042, 2.96, 1.197, 2.884, 1.383, 2.809, 1.564],
+  A3: [3.422, -0.552, 5.253, -0.815, 5.162, -1.239, 4.886, -2.098, 4.488, -2.858, 4.28, -3.151, 2.809, -2.032, 2.811, -1.55, 2.875, -1.401, 2.94, -1.247, 3.017, -1.061, 3.092, -0.88],
+  A4: [2.03, -2.81, 3.138, -4.291, 2.774, -4.526, 1.971, -4.939, 1.153, -5.195, 0.798, -5.255, 0.55, -3.423, 0.892, -3.084, 1.042, -3.023, 1.197, -2.96, 1.383, -2.884, 1.564, -2.809],
+  A5: [-0.551, -3.422, -0.815, -5.253, -1.239, -5.162, -2.098, -4.886, -2.858, -4.488, -3.151, -4.28, -2.032, -2.809, -1.55, -2.811, -1.401, -2.875, -1.247, -2.94, -1.061, -3.017, -0.88, -3.092],
+  A6: [-2.81, -2.03, -4.291, -3.138, -4.526, -2.774, -4.939, -1.971, -5.195, -1.153, -5.255, -0.798, -3.423, -0.55, -3.084, -0.892, -3.023, -1.042, -2.96, -1.197, -2.884, -1.383, -2.809, -1.564],
+  A7: [-3.422, 0.552, -5.253, 0.815, -5.162, 1.239, -4.886, 2.098, -4.488, 2.858, -4.28, 3.151, -2.809, 2.032, -2.811, 1.55, -2.875, 1.401, -2.94, 1.247, -3.017, 1.061, -3.092, 0.88],
+  A8: [-2.03, 2.81, -3.138, 4.291, -2.774, 4.526, -1.971, 4.939, -1.153, 5.195, -0.798, 5.255, -0.55, 3.423, -0.892, 3.084, -1.042, 3.023, -1.197, 2.96, -1.383, 2.884, -1.564, 2.809],
+  E1: [0, 2.386, -0.687, 3.073, 0, 3.76, 0.687, 3.073],
+  E2: [1.687, 1.687, 1.687, 2.659, 2.659, 2.659, 2.659, 1.687],
+  E3: [2.386, -0, 3.073, 0.687, 3.76, -0, 3.073, -0.687],
+  E4: [1.687, -1.687, 2.659, -1.687, 2.659, -2.659, 1.687, -2.659],
+  E5: [0, -2.386, 0.687, -3.073, 0, -3.76, -0.687, -3.073],
+  E6: [-1.687, -1.687, -1.687, -2.659, -2.659, -2.659, -2.659, -1.687],
+  E7: [-2.386, -0, -3.073, -0.687, -3.76, -0, -3.073, 0.687],
+  E8: [-1.687, 1.687, -2.659, 1.687, -2.659, 2.659, -1.687, 2.659],
+  D1: [-0.541, 4.434, -0.663, 5.278, 0, 5.319, 0.652, 5.285, 0.544, 4.434, 0.409, 3.55, 0, 3.952, -0.412, 3.549],
+  D2: [2.753, 3.517, 3.263, 4.201, 3.761, 3.762, 4.199, 3.276, 3.519, 2.751, 2.799, 2.222, 2.794, 2.795, 2.218, 2.801],
+  D3: [4.434, 0.541, 5.278, 0.663, 5.319, 0, 5.285, -0.652, 4.434, -0.544, 3.55, -0.409, 3.952, 0, 3.549, 0.412],
+  D4: [3.517, -2.753, 4.201, -3.263, 3.762, -3.761, 3.276, -4.199, 2.751, -3.519, 2.222, -2.799, 2.795, -2.794, 2.801, -2.218],
+  D5: [0.541, -4.434, 0.663, -5.278, 0, -5.319, -0.652, -5.285, -0.544, -4.434, -0.409, -3.55, 0, -3.952, 0.412, -3.549],
+  D6: [-2.753, -3.517, -3.263, -4.201, -3.761, -3.762, -4.199, -3.276, -3.519, -2.751, -2.799, -2.222, -2.794, -2.795, -2.218, -2.801],
+  D7: [-4.434, -0.541, -5.278, -0.663, -5.319, -0, -5.285, 0.652, -4.434, 0.544, -3.55, 0.409, -3.952, -0, -3.549, -0.412],
+  D8: [-3.517, 2.753, -4.201, 3.263, -3.762, 3.761, -3.276, 4.199, -2.751, 3.519, -2.222, 2.799, -2.795, 2.794, -2.801, 2.218],
 }
 
-/** Diamond around radius r at angle a, reaching dr outwards and da (radians) sideways. */
-function diamond(r: number, a: number, dr: number, da: number): Vec2[] {
-  return [polar(r + dr, a), polar(r, a - da), polar(r - dr, a), polar(r, a + da)]
-}
+/** Width of the border MajdataPlay draws, in world units. */
+export const SENSOR_BORDER = 0.043
 
-function build(): SensorArea[] {
-  const areas: SensorArea[] = []
-  const add = (name: string, points: Vec2[]) => {
-    const centre = name === 'C' ? { x: 0, y: 0 } : touchPosition({ group: name[0] as 'A' | 'B' | 'D' | 'E', index: Number(name.slice(1)) })
-    areas.push({ name, points, centre })
+export const SENSOR_AREAS: readonly SensorArea[] = Object.entries(OUTLINES).map(([name, flat]) => {
+  const points: Vec2[] = []
+  for (let i = 0; i < flat.length; i += 2) points.push({ x: flat[i]!, y: flat[i + 1]! })
+  const centre = {
+    x: points.reduce((s, p) => s + p.x, 0) / points.length,
+    y: points.reduce((s, p) => s + p.y, 0) / points.length,
   }
-  const circle: Vec2[] = []
-  for (let i = 0; i < 32; i++) circle.push(polar(C_RADIUS, (i / 32) * Math.PI * 2))
-  add('C', circle)
-  for (let n = 1; n <= 8; n++) {
-    const a = buttonAngle(n)
-    add(`B${n}`, sector(C_RADIUS, B_OUTER, a + STEP / 2, a - STEP / 2))
-    add(`A${n}`, sector(B_OUTER, A_OUTER, a + STEP / 2, a - STEP / 2))
-  }
-  // E and D lie across the borders between neighbouring A/B areas, so they go on top
-  for (let n = 1; n <= 8; n++) {
-    const a = buttonAngle(n) + STEP / 2
-    add(`E${n}`, diamond(3.1, a, 0.62, 0.2))
-    add(`D${n}`, sector(3.85, A_OUTER + 0.12, a + 0.1, a - 0.1, 2))
-  }
-  return areas
-}
+  return { name, points, centre }
+})
 
-/** Drawing order: C, then B/A, then the E/D areas that overlap them. */
-export const SENSOR_AREAS: readonly SensorArea[] = build()
+/** The sensor names a touch at this position covers (C means both halves). */
+export function sensorNames(group: string, index: number): string[] {
+  return group === 'C' ? ['C1', 'C2'] : [`${group}${index}`]
+}

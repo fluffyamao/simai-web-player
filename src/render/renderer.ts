@@ -20,7 +20,7 @@ import {
   type TouchTiming,
 } from '../core/touch'
 import { noteKey } from '../core/noteKey'
-import { SENSOR_AREAS } from '../core/sensors'
+import { SENSOR_AREAS, SENSOR_BORDER, sensorNames } from '../core/sensors'
 import { noteEndTime } from '../parser/simai'
 import type { Chart, Note } from '../parser/types'
 import {
@@ -247,40 +247,35 @@ export class Renderer {
     }
   }
 
-  /** The touch sensor overlay, red when idle and green while a touch on it is being hit. */
+  /** The touch sensor overlay: borders, red when idle and green while a touch on it is being hit. */
   private drawSensors(chart: PreparedChart | null, now: number) {
     const { ctx } = this
     const active = new Set<string>()
     for (const p of chart?.notes ?? []) {
       const loc = p.note.location
       if (loc.group === 'button' || now < p.time || now > p.end + SENSOR_LIT_SEC) continue
-      active.add(loc.group === 'C' ? 'C' : `${loc.group}${loc.index}`)
+      for (const name of sensorNames(loc.group, loc.index)) active.add(name)
     }
-    ctx.lineWidth = 0.03
+    ctx.lineWidth = SENSOR_BORDER
     ctx.lineJoin = 'round'
+    ctx.font = '0.24px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
     for (const area of SENSOR_AREAS) {
       const lit = active.has(area.name)
       ctx.beginPath()
       area.points.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)))
       ctx.closePath()
-      // D/E overlap the A/B areas: cover what is under them so each area reads on its own
-      if (area.name[0] === 'D' || area.name[0] === 'E') {
-        ctx.fillStyle = COLORS.field
+      if (lit) {
+        ctx.fillStyle = 'rgba(80, 230, 120, 0.3)'
         ctx.fill()
       }
-      ctx.fillStyle = lit ? 'rgba(80, 230, 120, 0.35)' : 'rgba(255, 80, 80, 0.07)'
-      ctx.fill()
-      ctx.strokeStyle = lit ? 'rgba(110, 255, 150, 0.9)' : 'rgba(255, 110, 110, 0.45)'
+      ctx.strokeStyle = lit ? 'rgba(110, 255, 150, 0.95)' : 'rgba(255, 90, 90, 0.6)'
       ctx.stroke()
-    }
-    ctx.font = '0.26px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    for (const area of SENSOR_AREAS) {
       ctx.save()
       ctx.translate(area.centre.x, area.centre.y)
       ctx.scale(1, -1)
-      ctx.fillStyle = active.has(area.name) ? '#d8ffe2' : 'rgba(255, 170, 170, 0.75)'
+      ctx.fillStyle = lit ? '#d8ffe2' : 'rgba(255, 160, 160, 0.7)'
       ctx.fillText(area.name, 0, 0)
       ctx.restore()
     }
