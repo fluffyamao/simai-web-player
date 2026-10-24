@@ -20,6 +20,7 @@ import {
   type TouchTiming,
 } from '../core/touch'
 import { noteKey } from '../core/noteKey'
+import { SENSOR_AREAS } from '../core/sensors'
 import { noteEndTime } from '../parser/simai'
 import type { Chart, Note } from '../parser/types'
 import {
@@ -40,6 +41,9 @@ const FIREWORK_SEC = 1.2
 const SLIDE_END_SEC = 0.3
 /** How far each of the 11 wifi bars sits from the start, as a fraction of the way to the ends. */
 const WIFI_BAR_SCALES = [0.084, 0.148, 0.223, 0.301, 0.381, 0.48, 0.574, 0.668, 0.763, 0.856, 0.965]
+
+/** How long a sensor stays lit after its touch ends. */
+const SENSOR_LIT_SEC = 0.15
 
 export const COLORS = {
   background: '#0d1017',
@@ -113,6 +117,8 @@ export interface RenderOptions {
   fireworks: boolean
   /** Colours chosen for particular notes, by noteKey(); they replace the usual colours. */
   noteColors?: ReadonlyMap<string, string> | null
+  /** Outline the touch sensors (A1..E8, C) and light up the ones being touched. */
+  showSensors?: boolean
 }
 
 /** Where a note was drawn in the last frame, in world units, for hit testing. */
@@ -157,6 +163,7 @@ export class Renderer {
     // world space: origin at centre, y up, 1 unit = 1 world unit
     ctx.setTransform(this.k, 0, 0, -this.k, size / 2, size / 2)
     this.drawField()
+    if (opts.showSensors) this.drawSensors(chart, now)
     this.hits = []
     this.colors = opts.noteColors ?? null
     if (!chart) return
@@ -236,6 +243,45 @@ export class Renderer {
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(b), 0, 0)
+      ctx.restore()
+    }
+  }
+
+  /** The touch sensor overlay, red when idle and green while a touch on it is being hit. */
+  private drawSensors(chart: PreparedChart | null, now: number) {
+    const { ctx } = this
+    const active = new Set<string>()
+    for (const p of chart?.notes ?? []) {
+      const loc = p.note.location
+      if (loc.group === 'button' || now < p.time || now > p.end + SENSOR_LIT_SEC) continue
+      active.add(loc.group === 'C' ? 'C' : `${loc.group}${loc.index}`)
+    }
+    ctx.lineWidth = 0.03
+    ctx.lineJoin = 'round'
+    for (const area of SENSOR_AREAS) {
+      const lit = active.has(area.name)
+      ctx.beginPath()
+      area.points.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)))
+      ctx.closePath()
+      // D/E overlap the A/B areas: cover what is under them so each area reads on its own
+      if (area.name[0] === 'D' || area.name[0] === 'E') {
+        ctx.fillStyle = COLORS.field
+        ctx.fill()
+      }
+      ctx.fillStyle = lit ? 'rgba(80, 230, 120, 0.35)' : 'rgba(255, 80, 80, 0.07)'
+      ctx.fill()
+      ctx.strokeStyle = lit ? 'rgba(110, 255, 150, 0.9)' : 'rgba(255, 110, 110, 0.45)'
+      ctx.stroke()
+    }
+    ctx.font = '0.26px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (const area of SENSOR_AREAS) {
+      ctx.save()
+      ctx.translate(area.centre.x, area.centre.y)
+      ctx.scale(1, -1)
+      ctx.fillStyle = active.has(area.name) ? '#d8ffe2' : 'rgba(255, 170, 170, 0.75)'
+      ctx.fillText(area.name, 0, 0)
       ctx.restore()
     }
   }

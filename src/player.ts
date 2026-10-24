@@ -13,6 +13,8 @@ export interface PlayerOptions {
   touchSpeed?: number
   /** Show the firework burst of touches marked `f`. Default true. */
   fireworks?: boolean
+  /** Outline the touch sensors (A1..E8, C), like MajdataPlay's DisplaySensor. Default false. */
+  showSensors?: boolean
   /** Play synthesised hit sounds. Default true. */
   hitSounds?: boolean
   /** Hit sound volume, 0..1. Default 0.5. */
@@ -75,6 +77,7 @@ export class SimaiPlayer {
   private speed: number
   private touchSpeed: number
   private fireworks: boolean
+  private showSensors: boolean
   private sounds = new HitSoundPlayer()
   private noteColors: Map<string, string> | null = null
   private frame = 0
@@ -95,6 +98,7 @@ export class SimaiPlayer {
     this.speed = noteSpeedFromSetting(options.tapSpeed ?? 7.5)
     this.touchSpeed = options.touchSpeed ?? 7.5
     this.fireworks = options.fireworks ?? true
+    this.showSensors = options.showSensors ?? false
     this.sounds.enabled = options.hitSounds ?? true
     this.sounds.volume = options.hitSoundVolume ?? 0.5
     this.resizeObserver = new ResizeObserver(() => {
@@ -291,6 +295,12 @@ export class SimaiPlayer {
     this.dirty = true
   }
 
+  /** Show or hide the touch sensor overlay. */
+  setShowSensors(enabled: boolean) {
+    this.showSensors = enabled
+    this.dirty = true
+  }
+
   /**
    * Draw particular notes in colours of your choice, keyed by noteKey() (e.g. to mark which
    * hand plays them). Slides take the colour of their star. Pass null to clear.
@@ -351,6 +361,7 @@ export class SimaiPlayer {
       touchSpeed: this.touchSpeed,
       fireworks: this.fireworks,
       noteColors: this.noteColors,
+      showSensors: this.showSensors,
     })
     for (const l of this.listeners) l(now)
   }
