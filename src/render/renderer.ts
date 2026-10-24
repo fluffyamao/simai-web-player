@@ -264,7 +264,7 @@ export class Renderer {
       ctx.beginPath()
       area.points.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)))
       ctx.closePath()
-      ctx.fillStyle = lit ? 'rgba(80, 230, 120, 0.45)' : 'rgba(255, 255, 255, 0.2)'
+      ctx.fillStyle = lit ? 'rgba(80, 230, 120, 0.45)' : 'rgba(255, 255, 255, 0.1)'
       ctx.fill()
       ctx.save()
       ctx.translate(area.centre.x, area.centre.y)
