@@ -3,7 +3,7 @@
 // Outlines of the 34 touch sensors, for the sensor overlay (MajdataPlay's Debug.DisplaySensor).
 // Taken from MajdataPlay (GPL-3.0): the border meshes in Assets/Models/JudgeAreaBorders/*.asset,
 // placed by each sensor's transform in Assets/Scenes/Init.unity (JudgeAreas scaled by 2.1432761).
-// World units, y up; each outline runs through the middle of the drawn border.
+// World units, y up; each outline runs through the middle of MajdataPlay's drawn border.
 import type { Vec2 } from './geometry'
 
 export interface SensorArea {
@@ -52,9 +52,6 @@ const OUTLINES: Record<string, number[]> = {
   D7: [-4.434, -0.541, -5.278, -0.663, -5.319, -0, -5.285, 0.652, -4.434, 0.544, -3.55, 0.409, -3.952, -0, -3.549, -0.412],
   D8: [-3.517, 2.753, -4.201, 3.263, -3.762, 3.761, -3.276, 4.199, -2.751, 3.519, -2.222, 2.799, -2.795, 2.794, -2.801, 2.218],
 }
-
-/** Width of the border MajdataPlay draws, in world units. */
-export const SENSOR_BORDER = 0.043
 
 export const SENSOR_AREAS: readonly SensorArea[] = Object.entries(OUTLINES).map(([name, flat]) => {
   const points: Vec2[] = []

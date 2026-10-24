@@ -20,7 +20,7 @@ import {
   type TouchTiming,
 } from '../core/touch'
 import { noteKey } from '../core/noteKey'
-import { SENSOR_AREAS, SENSOR_BORDER, sensorNames } from '../core/sensors'
+import { SENSOR_AREAS, sensorNames } from '../core/sensors'
 import { noteEndTime } from '../parser/simai'
 import type { Chart, Note } from '../parser/types'
 import {
@@ -247,7 +247,7 @@ export class Renderer {
     }
   }
 
-  /** The touch sensor overlay: borders, red when idle and green while a touch on it is being hit. */
+  /** The touch sensor overlay: faint white areas, green while a touch on it is being hit. */
   private drawSensors(chart: PreparedChart | null, now: number) {
     const { ctx } = this
     const active = new Set<string>()
@@ -256,8 +256,6 @@ export class Renderer {
       if (loc.group === 'button' || now < p.time || now > p.end + SENSOR_LIT_SEC) continue
       for (const name of sensorNames(loc.group, loc.index)) active.add(name)
     }
-    ctx.lineWidth = SENSOR_BORDER
-    ctx.lineJoin = 'round'
     ctx.font = '0.24px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -266,16 +264,12 @@ export class Renderer {
       ctx.beginPath()
       area.points.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)))
       ctx.closePath()
-      if (lit) {
-        ctx.fillStyle = 'rgba(80, 230, 120, 0.3)'
-        ctx.fill()
-      }
-      ctx.strokeStyle = lit ? 'rgba(110, 255, 150, 0.95)' : 'rgba(255, 90, 90, 0.6)'
-      ctx.stroke()
+      ctx.fillStyle = lit ? 'rgba(80, 230, 120, 0.45)' : 'rgba(255, 255, 255, 0.2)'
+      ctx.fill()
       ctx.save()
       ctx.translate(area.centre.x, area.centre.y)
       ctx.scale(1, -1)
-      ctx.fillStyle = lit ? '#d8ffe2' : 'rgba(255, 160, 160, 0.7)'
+      ctx.fillStyle = lit ? '#e6ffec' : 'rgba(255, 255, 255, 0.6)'
       ctx.fillText(area.name, 0, 0)
       ctx.restore()
     }
