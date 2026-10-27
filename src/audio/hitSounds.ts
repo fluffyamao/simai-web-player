@@ -44,7 +44,7 @@ export function renderSound(spec: SoundSpec, sampleRate: number): Float32Array<A
   const data = new Float32Array(Math.ceil(spec.seconds * sampleRate))
   let seed = 1234567
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-  const fn = spec.build(rand)
+  const fn = spec.build(rand, sampleRate)
   for (let i = 0; i < data.length; i++) {
     const t = i / sampleRate
     // 2 ms fade-out at the end to avoid clicks

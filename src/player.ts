@@ -350,6 +350,11 @@ export class SimaiPlayer {
     if (enabled && this.playing) this.sounds.unlock()
   }
 
+  /** Id of the hit sound set in use. */
+  get hitSoundPreset(): string {
+    return this.sounds.preset
+  }
+
   /** Switch the hit sound set (an id from HIT_SOUND_PRESETS). */
   setHitSoundPreset(id: string) {
     this.sounds.preset = id

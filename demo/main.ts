@@ -103,6 +103,7 @@ hitVolume.addEventListener('input', applyHitSounds)
 // sound sets, with a button per sound to audition them
 const hitPreset = $<HTMLSelectElement>('hitPreset')
 for (const p of HIT_SOUND_PRESETS) hitPreset.append(new Option(p.name, p.id))
+hitPreset.value = player.hitSoundPreset
 hitPreset.addEventListener('change', () => player.setHitSoundPreset(hitPreset.value))
 const KIND_NAMES: [HitSoundKind, string][] = [
   ['tap', 'Tap'],

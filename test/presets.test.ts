@@ -30,8 +30,11 @@ describe('hit sound presets', () => {
       }
 
       it('is about as loud as the classic set', () => {
+        // compare the first 100 ms, where a hit sound is heard; long quiet tails do not count
+        const head = (x: Float32Array) => x.subarray(0, RATE * 0.1)
         for (const kind of ['tap', 'break', 'touch'] as const) {
-          const ratio = rms(renderSound(preset.sounds[kind], RATE)) / rms(renderSound(findPreset('classic').sounds[kind], RATE))
+          const ratio =
+            rms(head(renderSound(preset.sounds[kind], RATE))) / rms(head(renderSound(findPreset('classic').sounds[kind], RATE)))
           expect(ratio).toBeGreaterThan(1 / 3)
           expect(ratio).toBeLessThan(3)
         }
