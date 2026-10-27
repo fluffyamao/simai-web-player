@@ -46,6 +46,8 @@ player.seek(42.5)
 player.setRate(0.5)       // half speed, pitch kept
 player.setFireworks(false) // hide the burst of `f` touches
 player.setHitSounds(true, 0.3)
+player.setHitSoundPreset('wood') // sound sets: HIT_SOUND_PRESETS (classic, wood, chip, crisp, marimba)
+player.previewHitSound('break')  // audition one sound
 player.onTime((t) => { /* every frame while time changes */ })
 
 // progress bar (<input type="range" min="0" max="1">): drag along it to jump anywhere;

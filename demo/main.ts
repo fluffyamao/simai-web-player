@@ -1,4 +1,4 @@
-import { attachProgressBar, attachShuttleButton, DIFFICULTY_NAMES, parseMaidata, SimaiPlayer, type Maidata } from '../src'
+import { attachProgressBar, attachShuttleButton, DIFFICULTY_NAMES, HIT_SOUND_PRESETS, type HitSoundKind, parseMaidata, SimaiPlayer, type Maidata } from '../src'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const canvas = $<HTMLCanvasElement>('view')
@@ -99,6 +99,24 @@ mustTouch.addEventListener('change', () => player.setShowMustTouch(mustTouch.che
 const applyHitSounds = () => player.setHitSounds(hitSounds.checked, Number(hitVolume.value))
 hitSounds.addEventListener('change', applyHitSounds)
 hitVolume.addEventListener('input', applyHitSounds)
+
+// sound sets, with a button per sound to audition them
+const hitPreset = $<HTMLSelectElement>('hitPreset')
+for (const p of HIT_SOUND_PRESETS) hitPreset.append(new Option(p.name, p.id))
+hitPreset.addEventListener('change', () => player.setHitSoundPreset(hitPreset.value))
+const KIND_NAMES: [HitSoundKind, string][] = [
+  ['tap', 'Tap'],
+  ['break', 'Break'],
+  ['touch', 'Touch'],
+  ['slide', 'Slide'],
+  ['firework', '烟花'],
+]
+for (const [kind, label] of KIND_NAMES) {
+  const b = document.createElement('button')
+  b.textContent = `▶ ${label}`
+  b.addEventListener('click', () => player.previewHitSound(kind))
+  $('hitPreview').append(b)
+}
 
 player.onTime((t) => {
   timeLabel.textContent = fmt(t)

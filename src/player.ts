@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { hitSoundEvents, HitSoundPlayer } from './audio/hitSounds'
+import { hitSoundEvents, HitSoundPlayer, type HitSoundKind } from './audio/hitSounds'
 import { FreeClock, MediaClock, type Clock } from './core/clock'
 import { noteSpeedFromSetting } from './core/geometry'
 import { parseSimai } from './parser/simai'
@@ -23,6 +23,8 @@ export interface PlayerOptions {
   hitSounds?: boolean
   /** Hit sound volume, 0..1. Default 0.5. */
   hitSoundVolume?: number
+  /** Hit sound set, an id from HIT_SOUND_PRESETS. Default 'classic'. */
+  hitSoundPreset?: string
   /**
    * Scrub by dragging left/right on the chart (the canvas width spans 2 seconds, Shift for
    * finer) and step note by note with the mouse wheel. Default true.
@@ -109,6 +111,7 @@ export class SimaiPlayer {
     this.showMustTouch = options.showMustTouch ?? false
     this.sounds.enabled = options.hitSounds ?? true
     this.sounds.volume = options.hitSoundVolume ?? 0.5
+    if (options.hitSoundPreset) this.sounds.preset = options.hitSoundPreset
     this.resizeObserver = new ResizeObserver(() => {
       if (this.renderer.resize()) this.dirty = true
     })
@@ -345,6 +348,16 @@ export class SimaiPlayer {
     this.sounds.enabled = enabled
     if (volume !== undefined) this.sounds.volume = volume
     if (enabled && this.playing) this.sounds.unlock()
+  }
+
+  /** Switch the hit sound set (an id from HIT_SOUND_PRESETS). */
+  setHitSoundPreset(id: string) {
+    this.sounds.preset = id
+  }
+
+  /** Play one hit sound now, to audition a sound set. Call from a user gesture. */
+  previewHitSound(kind: HitSoundKind) {
+    this.sounds.preview(kind)
   }
 
   private updateSoundEvents() {

@@ -3,6 +3,7 @@
 // Hit sounds, synthesised in code (no game samples), scheduled on Web Audio a little
 // ahead of the playback clock so they land on time.
 import type { Note } from '../parser/types'
+import { DEFAULT_HIT_SOUND_PRESET, findPreset, type SoundSpec } from './presets'
 
 export type HitSoundKind = 'tap' | 'break' | 'touch' | 'slide' | 'firework'
 
@@ -38,47 +39,22 @@ export function hitSoundEvents(notes: { note: Note; time: number }[], fireworks:
   return events.sort((a, b) => a.time - b.time)
 }
 
-type Synth = (t: number, rand: () => number) => number
-
-const decay = (t: number, rate: number) => Math.exp(-t * rate)
-const SYNTHS: Record<HitSoundKind, [seconds: number, gain: number, fn: Synth]> = {
-  // short bright click
-  tap: [0.06, 0.6, (t, r) => Math.sin(2 * Math.PI * 1760 * t) * decay(t, 70) + (r() * 2 - 1) * decay(t, 400) * 0.5],
-  // two-tone chime with a crack
-  break: [
-    0.35,
-    0.55,
-    (t, r) =>
-      (Math.sin(2 * Math.PI * 1318 * t) + Math.sin(2 * Math.PI * 1976 * t) * 0.7) * decay(t, 12) +
-      (r() * 2 - 1) * decay(t, 60) * 0.6,
-  ],
-  // soft pop
-  touch: [0.08, 0.5, (t) => Math.sin(2 * Math.PI * (700 + 500 * decay(t, 40)) * t) * decay(t, 45)],
-  // short airy swish
-  slide: [0.3, 0.25, (t, r) => (r() * 2 - 1) * Math.sin(Math.PI * Math.min(t / 0.3, 1)) * 0.8],
-  // crackling burst
-  firework: [
-    0.8,
-    0.45,
-    (t, r) => (r() * 2 - 1) * decay(t, 5) * (r() < 0.02 ? 3 : 0.5) + Math.sin(2 * Math.PI * 90 * t) * decay(t, 8),
-  ],
-}
-
-function render(ctx: AudioContext, kind: HitSoundKind): AudioBuffer {
-  const [seconds, gain, fn] = SYNTHS[kind]
-  const rate = ctx.sampleRate
-  const buffer = ctx.createBuffer(1, Math.ceil(seconds * rate), rate)
-  const data = buffer.getChannelData(0)
+/** Render one sound to samples at `sampleRate`. */
+export function renderSound(spec: SoundSpec, sampleRate: number): Float32Array<ArrayBuffer> {
+  const data = new Float32Array(Math.ceil(spec.seconds * sampleRate))
   let seed = 1234567
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const fn = spec.build(rand)
   for (let i = 0; i < data.length; i++) {
-    const t = i / rate
+    const t = i / sampleRate
     // 2 ms fade-out at the end to avoid clicks
-    const tail = Math.min(1, (seconds - t) / 0.002)
-    data[i] = Math.max(-1, Math.min(1, fn(t, rand) * gain * tail))
+    const tail = Math.min(1, (spec.seconds - t) / 0.002)
+    data[i] = Math.max(-1, Math.min(1, fn(t) * spec.gain * tail))
   }
-  return buffer
+  return data
 }
+
+const KINDS: HitSoundKind[] = ['tap', 'break', 'touch', 'slide', 'firework']
 
 export class HitSoundPlayer {
   private ctx: AudioContext | null = null
@@ -92,6 +68,17 @@ export class HitSoundPlayer {
   private wasPlaying = false
   enabled = true
   private _volume = 0.5
+  private _preset = DEFAULT_HIT_SOUND_PRESET
+
+  /** Id of the sound set in use (see HIT_SOUND_PRESETS). */
+  get preset() {
+    return this._preset
+  }
+
+  set preset(id: string) {
+    this._preset = findPreset(id).id
+    if (this.ctx) this.renderBuffers(this.ctx)
+  }
 
   get volume() {
     return this._volume
@@ -109,9 +96,29 @@ export class HitSoundPlayer {
       this.gain = this.ctx.createGain()
       this.gain.gain.value = this._volume
       this.gain.connect(this.ctx.destination)
-      for (const kind of Object.keys(SYNTHS) as HitSoundKind[]) this.buffers.set(kind, render(this.ctx, kind))
+      this.renderBuffers(this.ctx)
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume()
+  }
+
+  private renderBuffers(ctx: AudioContext) {
+    const preset = findPreset(this._preset)
+    for (const kind of KINDS) {
+      const samples = renderSound(preset.sounds[kind], ctx.sampleRate)
+      const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate)
+      buffer.copyToChannel(samples, 0)
+      this.buffers.set(kind, buffer)
+    }
+  }
+
+  /** Play one sound right away, e.g. to audition a sound set. Call from a user gesture. */
+  preview(kind: HitSoundKind) {
+    this.unlock()
+    const ctx = this.ctx!
+    const source = ctx.createBufferSource()
+    source.buffer = this.buffers.get(kind)!
+    source.connect(this.gain!)
+    source.start()
   }
 
   setEvents(events: HitSoundEvent[]) {
