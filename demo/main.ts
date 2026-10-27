@@ -106,10 +106,13 @@ for (const p of HIT_SOUND_PRESETS) hitPreset.append(new Option(p.name, p.id))
 hitPreset.value = player.hitSoundPreset
 hitPreset.addEventListener('change', () => player.setHitSoundPreset(hitPreset.value))
 const KIND_NAMES: [HitSoundKind, string][] = [
+  ['answer', 'Answer'],
   ['tap', 'Tap'],
+  ['ex', 'EX'],
   ['break', 'Break'],
   ['touch', 'Touch'],
   ['slide', 'Slide'],
+  ['breakSlide', '绝赞 Slide'],
   ['firework', '烟花'],
 ]
 for (const [kind, label] of KIND_NAMES) {

@@ -3,9 +3,17 @@
 // Hit sounds, synthesised in code (no game samples), scheduled on Web Audio a little
 // ahead of the playback clock so they land on time.
 import type { Note } from '../parser/types'
-import { DEFAULT_HIT_SOUND_PRESET, findPreset, type SoundSpec } from './presets'
+import { DEFAULT_HIT_SOUND_PRESET, findPreset, soundFor, type SoundSpec } from './presets'
 
-export type HitSoundKind = 'tap' | 'break' | 'touch' | 'slide' | 'firework'
+export type HitSoundKind =
+  | 'answer' // guide sound at every moment a note lands (and when holds end)
+  | 'tap'
+  | 'ex' // EX notes (with the protective shell), instead of tap
+  | 'break'
+  | 'touch'
+  | 'slide'
+  | 'breakSlide' // start of a break slide
+  | 'firework'
 
 export interface HitSoundEvent {
   /** Audio time in seconds. */
@@ -16,7 +24,15 @@ export interface HitSoundEvent {
 /** Seconds of audio scheduled ahead of the clock. */
 const LOOKAHEAD = 0.15
 
-/** Hit sound events for a chart, in audio time. One sound per kind per moment. */
+/** Shortest hold whose release gets its own answer sound (one frame, as in MajdataPlay). */
+const MIN_HOLD_FOR_ANSWER = 1 / 60
+
+/**
+ * Hit sound events for a chart, in audio time, following MajdataPlay's rules:
+ * an answer sound at every moment a note lands or a hold ends, plus the note's own sound
+ * (tap, ex or break; touch; slide or break slide at the slide start, break at its end;
+ * firework when a firework touch finishes). One sound per kind per moment.
+ */
 export function hitSoundEvents(notes: { note: Note; time: number }[], fireworks: boolean): HitSoundEvent[] {
   const seen = new Set<string>()
   const events: HitSoundEvent[] = []
@@ -28,9 +44,18 @@ export function hitSoundEvents(notes: { note: Note; time: number }[], fireworks:
   }
   for (const { note, time } of notes) {
     if (note.isMine) continue
+    const hasHead = note.location.group !== 'button' || note.head !== 'none'
+    if (hasHead) {
+      add(time, 'answer')
+      if (note.length >= MIN_HOLD_FOR_ANSWER) add(time + note.length, 'answer')
+    }
     if (note.location.group === 'button') {
-      if (note.head !== 'none') add(time, note.isBreak ? 'break' : 'tap')
-      for (const s of note.slides) add(time + s.delay, s.isBreak ? 'break' : 'slide')
+      if (hasHead) add(time, note.isBreak ? 'break' : note.isEx ? 'ex' : 'tap')
+      for (const s of note.slides) {
+        const start = time + s.delay
+        add(start, s.isBreak ? 'breakSlide' : 'slide')
+        if (s.isBreak) add(start + s.duration, 'break')
+      }
     } else {
       add(time, note.isBreak ? 'break' : 'touch')
       if (note.isFirework && fireworks) add(time + note.length, 'firework')
@@ -41,6 +66,14 @@ export function hitSoundEvents(notes: { note: Note; time: number }[], fireworks:
 
 /** Render one sound to samples at `sampleRate`. */
 export function renderSound(spec: SoundSpec, sampleRate: number): Float32Array<ArrayBuffer> {
+  const steps = renderSteps(spec, sampleRate, Infinity)
+  let r = steps.next()
+  while (!r.done) r = steps.next()
+  return r.value
+}
+
+/** Render in chunks of `chunk` samples, yielding between them so the page stays responsive. */
+function* renderSteps(spec: SoundSpec, sampleRate: number, chunk: number): Generator<void, Float32Array<ArrayBuffer>> {
   const data = new Float32Array(Math.ceil(spec.seconds * sampleRate))
   let seed = 1234567
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
@@ -50,16 +83,26 @@ export function renderSound(spec: SoundSpec, sampleRate: number): Float32Array<A
     // 2 ms fade-out at the end to avoid clicks
     const tail = Math.min(1, (spec.seconds - t) / 0.002)
     data[i] = Math.max(-1, Math.min(1, fn(t) * spec.gain * tail))
+    if ((i + 1) % chunk === 0) yield
   }
   return data
 }
 
-const KINDS: HitSoundKind[] = ['tap', 'break', 'touch', 'slide', 'firework']
+/** Sounds are rendered at this rate; the browser resamples if its output rate differs. */
+const RENDER_RATE = 48000
+/** Samples per rendering step (~10-20 ms of work). */
+const RENDER_CHUNK = 8192
+
+const KINDS: HitSoundKind[] = ['answer', 'tap', 'ex', 'break', 'touch', 'slide', 'breakSlide', 'firework']
 
 export class HitSoundPlayer {
   private ctx: AudioContext | null = null
   private gain: GainNode | null = null
   private buffers = new Map<HitSoundKind, AudioBuffer>()
+  /** Rendered samples per kind, ready before there is an AudioContext. */
+  private samples = new Map<HitSoundKind, Float32Array<ArrayBuffer>>()
+  /** Bumped whenever a new set starts rendering, so stale renders stop. */
+  private renderToken = 0
   private events: HitSoundEvent[] = []
   private next = 0
   private scheduled: AudioBufferSourceNode[] = []
@@ -76,8 +119,15 @@ export class HitSoundPlayer {
   }
 
   set preset(id: string) {
-    this._preset = findPreset(id).id
-    if (this.ctx) this.renderBuffers(this.ctx)
+    const next = findPreset(id).id
+    if (next === this._preset && this.renderToken > 0) return
+    this._preset = next
+    void this.render()
+  }
+
+  constructor() {
+    // render in the background straight away, so the first play has its sounds ready
+    void this.render()
   }
 
   get volume() {
@@ -96,27 +146,48 @@ export class HitSoundPlayer {
       this.gain = this.ctx.createGain()
       this.gain.gain.value = this._volume
       this.gain.connect(this.ctx.destination)
-      this.renderBuffers(this.ctx)
+      for (const kind of this.samples.keys()) this.makeBuffer(kind)
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume()
   }
 
-  private renderBuffers(ctx: AudioContext) {
+  /** Render the current set a little at a time; sounds become playable as they finish. */
+  private async render() {
+    const token = ++this.renderToken
     const preset = findPreset(this._preset)
+    this.samples.clear()
+    this.buffers.clear()
     for (const kind of KINDS) {
-      const samples = renderSound(preset.sounds[kind], ctx.sampleRate)
-      const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate)
-      buffer.copyToChannel(samples, 0)
-      this.buffers.set(kind, buffer)
+      const spec = soundFor(preset, kind)
+      if (!spec) continue // e.g. sets without an answer sound
+      const steps = renderSteps(spec, RENDER_RATE, RENDER_CHUNK)
+      let r = steps.next()
+      while (!r.done) {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        if (token !== this.renderToken) return // another set was chosen meanwhile
+        r = steps.next()
+      }
+      this.samples.set(kind, r.value)
+      if (this.ctx) this.makeBuffer(kind)
     }
+  }
+
+  private makeBuffer(kind: HitSoundKind) {
+    const samples = this.samples.get(kind)
+    if (!this.ctx || !samples) return
+    const buffer = this.ctx.createBuffer(1, samples.length, RENDER_RATE)
+    buffer.copyToChannel(samples, 0)
+    this.buffers.set(kind, buffer)
   }
 
   /** Play one sound right away, e.g. to audition a sound set. Call from a user gesture. */
   preview(kind: HitSoundKind) {
     this.unlock()
     const ctx = this.ctx!
+    const buffer = this.buffers.get(kind)
+    if (!buffer) return
     const source = ctx.createBufferSource()
-    source.buffer = this.buffers.get(kind)!
+    source.buffer = buffer
     source.connect(this.gain!)
     source.start()
   }
@@ -162,8 +233,10 @@ export class HitSoundPlayer {
     const horizon = now + LOOKAHEAD * rate
     while (this.next < this.events.length && this.events[this.next]!.time <= horizon) {
       const e = this.events[this.next++]!
+      const buffer = this.buffers.get(e.kind)
+      if (!buffer) continue
       const source = ctx.createBufferSource()
-      source.buffer = this.buffers.get(e.kind)!
+      source.buffer = buffer
       source.connect(this.gain!)
       source.start(ctx.currentTime + Math.max(0, (e.time - now) / rate))
       source.onended = () => {
@@ -175,6 +248,7 @@ export class HitSoundPlayer {
   }
 
   destroy() {
+    this.renderToken++
     this.reset()
     void this.ctx?.close()
     this.ctx = null

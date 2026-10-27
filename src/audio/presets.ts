@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Hit sound sets, all synthesised sample by sample (no recorded samples).
+import { ARCADE_MODELS, MODEL_BAND_Q, type SoundModel } from './arcadeModel'
 import type { HitSoundKind } from './hitSounds'
 
 /**
@@ -16,10 +17,23 @@ export interface SoundSpec {
   build: SynthBuilder
 }
 
+/** Every set has these; the others fall back (ex -> tap, break slide -> slide, no answer). */
+type CoreKind = 'tap' | 'break' | 'touch' | 'slide' | 'firework'
+
 export interface HitSoundPreset {
   id: string
   name: string
-  sounds: Record<HitSoundKind, SoundSpec>
+  sounds: Record<CoreKind, SoundSpec> & Partial<Record<HitSoundKind, SoundSpec>>
+}
+
+const FALLBACK: Partial<Record<HitSoundKind, CoreKind>> = { ex: 'tap', breakSlide: 'slide' }
+
+/** The sound a set plays for `kind`, or undefined if it has none (e.g. no answer sound). */
+export function soundFor(preset: HitSoundPreset, kind: HitSoundKind): SoundSpec | undefined {
+  const own = preset.sounds[kind]
+  if (own) return own
+  const fallback = FALLBACK[kind]
+  return fallback ? preset.sounds[fallback] : undefined
 }
 
 const TAU = Math.PI * 2
@@ -285,88 +299,50 @@ const marimba: HitSoundPreset = {
   },
 }
 
-// Modelled on measurements of the arcade's own sounds (envelopes and partials only;
-// everything is synthesised, no recorded audio is used).
+/** Shorter than the analysis window could resolve: treat as an instant attack. */
+const SMEARED_ATTACK = 0.045
+
+/** attack ramp, then decay at k1 until `kn` seconds after the peak, then at k2 */
+function modelEnvelope(t: number, at: number, k1: number, k2: number, kn: number) {
+  if (t < at) return t / at
+  const d = t - at
+  return d < kn ? Math.exp(-k1 * d) : Math.exp(-k1 * kn - k2 * (d - kn))
+}
+
+/** A sound rebuilt from fitted parameters: decaying partials plus enveloped noise bands. */
+function modelled(model: SoundModel, gain: number): SoundSpec {
+  const attack = (at: number) => (at < SMEARED_ATTACK ? 0.002 : at - 0.02)
+  return {
+    seconds: model.seconds,
+    gain,
+    build: (r, rate) => {
+      const partials = model.partials.map((p) => ({ ...p, at: attack(p.at) }))
+      const bands = model.bands.map((b) => ({ ...b, at: attack(b.at), filter: bandpass(rate, MODEL_BAND_Q) }))
+      return (t) => {
+        let sum = 0
+        for (const p of partials) sum += p.a * Math.sin(TAU * p.f * t) * modelEnvelope(t, p.at, p.k1, p.k2, p.kn)
+        for (const b of bands) sum += b.g * b.filter(noise(r), b.fc) * modelEnvelope(t, b.at, b.k1, b.k2, b.kn)
+        return sum
+      }
+    },
+  }
+}
+
+// Rebuilt from parameters fitted to measurements of the cabinet's sounds (see arcadeModel.ts).
+// Relative levels follow MajdataPlay's default mix (answer louder than the note sounds).
+const A = ARCADE_MODELS
 const arcade: HitSoundPreset = {
   id: 'arcade',
   name: '街机',
   sounds: {
-    // bell centred on G6 (1568 Hz) with C6, G5 and upper partials, and a short knock
-    tap: {
-      seconds: 0.45,
-      gain: 0.27,
-      build: (r, rate) => {
-        const sheen = bandpass(rate, 2)
-        return (t) => {
-          const bell =
-            (sine(1568, t) + sine(1045, t) * 0.85 + sine(785, t) * 0.45 + sine(3136, t) * 0.5 + sine(6360, t) * 0.5) *
-            decay(t, 7.7)
-          const knock = (sine(888, t) + sine(1333, t) * 0.7 + sine(1955, t) * 0.6) * decay(t, 30)
-          // a little bright noise on top, like the original's sheen
-          return bell * 0.55 + knock * 0.6 + sheen(noise(r), 6000) * decay(t, 8) * 0.9
-        }
-      },
-    },
-    // metallic shimmer: inharmonic partials, the 13.3 kHz one strongest, and a crack
-    break: {
-      seconds: 1.0,
-      gain: 0.25,
-      build: (r) => {
-        const crack = highpass(0.3)
-        const partials: [number, number, number][] = [
-          [13288, 1, 3.4],
-          [8155, 0.35, 4],
-          [3517, 0.55, 3],
-          [3044, 0.3, 5],
-          [1328, 0.5, 4.5],
-          [977, 0.25, 5],
-        ]
-        return (t) => {
-          let sum = 0
-          for (const [f, a, k] of partials) sum += sine(f, t) * a * decay(t, k)
-          return sum + crack(noise(r)) * decay(t, 40) * 0.8
-        }
-      },
-    },
-    // short cluster around 1.0-2.2 kHz, then airy high noise
-    touch: {
-      seconds: 0.7,
-      gain: 0.5,
-      build: (r, rate) => {
-        const air = bandpass(rate, 1.2)
-        return (t) =>
-          (sine(1377, t) + sine(1577, t) * 0.9 + sine(1977, t) * 0.9 + sine(1044, t) * 0.8 + sine(2177, t) * 0.6) *
-            decay(t, 40) * 0.35 +
-          air(noise(r), 14000) * Math.min(t / 0.035, 1) * decay(Math.max(t - 0.035, 0), 9) * 0.5
-      },
-    },
-    // whoosh: band-passed noise whose centre drifts 7k -> 9.6k -> 5.2k, swelling in
-    slide: {
-      seconds: 1.6,
-      gain: 0.9,
-      build: (r, rate) => {
-        const bp = bandpass(rate, 1.2)
-        return (t) => {
-          const centre = t < 0.25 ? 7000 + (2600 * t) / 0.25 : 9600 - 4400 * Math.min((t - 0.25) / 1.0, 1)
-          const env = Math.min(t / 0.175, 1) * (t < 0.175 ? 1 : decay(t - 0.175, 2.6))
-          return bp(noise(r), centre) * env
-        }
-      },
-    },
-    // burst, low boom, high crackle and a mid tail
-    firework: {
-      seconds: 3.2,
-      gain: 0.45,
-      build: (r, rate) => {
-        const crackle = highpass(0.8)
-        const tail = bandpass(rate, 1.5)
-        return (t) =>
-          (sine(1444, t) + sine(1733, t) + sine(3511, t) * 0.7 + sine(4244, t) * 0.5) * decay(t, 60) * 0.3 +
-          Math.sin(TAU * 85 * t * (1 + 0.6 * decay(t, 6))) * Math.min(t / 0.13, 1) * decay(t, 1.3) * 0.9 +
-          crackle(noise(r) * (r() < 0.03 ? 5 : 0.5)) * Math.min(t / 0.13, 1) * decay(t, 1.0) * 0.5 +
-          tail(noise(r), 1100) * Math.min(t / 0.4, 1) * decay(t, 1.0) * 1.2
-      },
-    },
+    answer: modelled(A.answer!, 0.5),
+    tap: modelled(A.tap!, 1.6),
+    ex: modelled(A.ex!, 1.0),
+    break: modelled(A.break!, 1.6),
+    touch: modelled(A.touch!, 1.6),
+    slide: modelled(A.slide!, 1.4),
+    breakSlide: modelled(A.breakSlide!, 1.6),
+    firework: modelled(A.firework!, 1.2),
   },
 }
 
