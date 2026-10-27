@@ -13,25 +13,41 @@ export interface Clock {
   destroy(): void
 }
 
+/** Gaps between our time and the element's smaller than this are eased out, not snapped. */
+const SNAP_THRESHOLD = 0.25
+/** Time constant (seconds) for easing out small gaps. */
+const SLEW_SECONDS = 0.5
+
 /**
  * Clock driven by an <audio> element.
  *
- * `audio.currentTime` only advances in coarse steps in some browsers, which makes
- * notes stutter. Between updates we extrapolate from performance.now() and only
- * snap back to the element when the two drift apart.
+ * `audio.currentTime` is not smooth: it advances in coarse steps, leaps ahead when playback
+ * starts and stalls while the output starts up. Following it directly makes the chart jump
+ * forward and snap back on every resume. Instead we keep our own time that
+ * - stays exactly at the paused position until the audio really starts moving,
+ * - then runs on performance.now(), easing towards the element's time without going back,
+ * - and only snaps when they are far apart (a seek, or a long stall).
  */
 export class MediaClock implements Clock {
-  private anchorMedia = 0
-  private anchorWall = 0
+  /** Our time, and the wall clock when it was last advanced. */
+  private est = 0
+  private estWall = 0
+  /** Last value the element reported, and when it first reported it. */
   private lastMedia = -1
+  private lastMediaWall = 0
+  /** Playback was requested but the element's time has not moved yet. */
+  private waitingStart = false
+  /** Changes of the element's time seen while waiting; its first one is a start-up leap. */
+  private startChanges = 0
+  /** Whether the element was playing at the last now(), to catch resumes ourselves. */
+  private wasPlaying = false
 
   constructor(readonly audio: HTMLAudioElement) {
     audio.preservesPitch = true
-    const resync = () => this.resync()
-    audio.addEventListener('seeked', resync)
-    audio.addEventListener('play', resync)
-    audio.addEventListener('pause', resync)
-    audio.addEventListener('ratechange', resync)
+    const snap = () => this.snap()
+    audio.addEventListener('seeked', snap)
+    audio.addEventListener('pause', snap)
+    this.snap()
   }
 
   get playing() {
@@ -48,21 +64,53 @@ export class MediaClock implements Clock {
 
   now(): number {
     const media = this.audio.currentTime
-    if (!this.playing) return media
+    const playing = this.playing
+    const resumed = playing && !this.wasPlaying
+    this.wasPlaying = playing
+    if (!playing) return media
+    if (resumed) {
+      // the 'play' event comes later than paused turns false, so detect the resume here
+      this.snap()
+      this.waitingStart = true
+      this.startChanges = 0
+      return this.est
+    }
     const wall = performance.now()
     if (media !== this.lastMedia) {
-      // the element reported a new position; keep our estimate unless it drifted
       this.lastMedia = media
-      const predicted = this.anchorMedia + ((wall - this.anchorWall) / 1000) * this.rate
-      if (Math.abs(predicted - media) > 0.05) this.resync()
+      this.lastMediaWall = wall
+      if (this.waitingStart && ++this.startChanges >= 2) {
+        // the audio is really moving now (its first change is a leap before output starts):
+        // run on from where we paused, easing towards the element from here
+        this.waitingStart = false
+        this.estWall = wall
+        return this.est
+      }
     }
-    return this.anchorMedia + ((wall - this.anchorWall) / 1000) * this.rate
+    if (this.waitingStart) return this.est
+
+    const rate = this.rate
+    const dt = (wall - this.estWall) / 1000
+    this.estWall = wall
+    const next = this.est + dt * rate
+    // where the element is now, extrapolated from its last report
+    const media_ = this.lastMedia + ((wall - this.lastMediaWall) / 1000) * rate
+    const gap = media_ - next
+    if (Math.abs(gap) > SNAP_THRESHOLD) {
+      this.est = media_
+    } else {
+      // ease the gap out, but never run backwards while playing
+      this.est = Math.max(this.est, next + gap * Math.min(1, dt / SLEW_SECONDS))
+    }
+    return this.est
   }
 
-  private resync() {
-    this.anchorMedia = this.audio.currentTime
-    this.anchorWall = performance.now()
-    this.lastMedia = this.anchorMedia
+  private snap() {
+    const wall = performance.now()
+    this.est = this.audio.currentTime
+    this.estWall = wall
+    this.lastMedia = this.est
+    this.lastMediaWall = wall
   }
 
   play() {
@@ -71,11 +119,19 @@ export class MediaClock implements Clock {
 
   pause() {
     this.audio.pause()
+    // Chrome reports the audible position after pausing but resumes from where its decoder
+    // was, ~70ms further on. Seeking to the reported position makes resume start right there.
+    this.audio.currentTime = this.audio.currentTime
   }
 
   seek(time: number) {
     this.audio.currentTime = Math.max(0, time)
-    this.resync()
+    this.snap()
+    // while playing, the element needs a moment to continue from the new spot
+    if (this.playing) {
+      this.waitingStart = true
+      this.startChanges = 0
+    }
   }
 
   setRate(rate: number) {
