@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { countScoreNotes, gradeLoss, noteKept, totalBaseScore } from '../src/core/score'
+import { countScoreNotes, gradeLoss, noteKept, scoreAt, scoreObjects, scoreTimeline, totalBaseScore } from '../src/core/score'
 import { parseSimai } from '../src/parser/simai'
 
 const counts = (text: string) => countScoreNotes(parseSimai(text).notes)
@@ -82,4 +82,62 @@ it('says nothing about an empty chart instead of dividing by zero', () => {
   const empty = { tap: 0, hold: 0, slide: 0, touch: 0, break: 0 }
   expect(totalBaseScore(empty)).toBe(0)
   expect(gradeLoss(empty, 'tap', 'miss')).toBe(0)
+})
+
+it('judges a hold at its tail and a slide at its end', () => {
+  // 120bpm: a beat is 0.5s, so [4:1] is one beat
+  const objects = scoreObjects(parseSimai('(120)1h[4:1],').notes)
+  expect(objects).toEqual([{ ms: 500, kind: 'hold' }])
+  // the star counts at once, the slide when it arrives
+  expect(scoreObjects(parseSimai('(120)1-5[4:1],').notes)).toEqual([
+    { ms: 0, kind: 'tap' },
+    { ms: 1000, kind: 'slide' },
+  ])
+})
+
+it('counts up as the chart goes by', () => {
+  const t = scoreTimeline(parseSimai('(120)1,2,3,4,').notes)
+  expect(t.times).toEqual([0, 500, 1000, 1500])
+  expect(scoreAt(t, -1).combo).toBe(0)
+  expect(scoreAt(t, 0).combo).toBe(1)
+  expect(scoreAt(t, 999).combo).toBe(2)
+  expect(scoreAt(t, 99999).combo).toBe(4)
+  // a perfect run ends on 100% with no breaks to give the extra one
+  expect(scoreAt(t, 99999).achievement).toBeCloseTo(100, 10)
+  expect(scoreAt(t, 500).achievement).toBeCloseTo(50, 10)
+})
+
+it('reaches exactly 101 percent when the chart has breaks', () => {
+  const t = scoreTimeline(parseSimai('(120)1b,2,3b,4,').notes)
+  const end = scoreAt(t, 99999)
+  expect(end.achievement).toBeCloseTo(101, 10)
+  expect(end.achievement100).toBeCloseTo(101, 10)
+  expect(end.achievement101).toBe(101)
+  // halfway through the breaks the bonus is half paid
+  expect(scoreAt(t, 0).achievement100).toBeCloseTo(100.5, 10)
+})
+
+it('holds 101 percent from the very start, since a perfect run loses nothing', () => {
+  const t = scoreTimeline(parseSimai('(120)1b,2,3b,4,').notes)
+  for (const ms of [-1, 0, 500, 1200, 99999]) expect(scoreAt(t, ms).achievement101).toBe(101)
+  // without a break the pool cannot be paid at all
+  expect(scoreAt(scoreTimeline(parseSimai('(120)1,2,').notes), 0).achievement101).toBe(100)
+})
+
+it('gives three DX points an object', () => {
+  const t = scoreTimeline(parseSimai('(120)1,2,3-5[4:1],').notes)
+  // three taps and one slide
+  expect(t.times.length).toBe(4)
+  expect(scoreAt(t, 99999)).toMatchObject({ dxScore: 12, dxTotal: 12 })
+  expect(scoreAt(t, 0)).toMatchObject({ dxScore: 3, dxTotal: 12 })
+})
+
+it('says nothing on an empty chart instead of dividing by zero', () => {
+  const t = scoreTimeline([])
+  expect(scoreAt(t, 0)).toMatchObject({ combo: 0, total: 0, achievement: 0, dxTotal: 0 })
+})
+
+it('shifts the timeline by the chart offset', () => {
+  const notes = parseSimai('(120)1,2,').notes
+  expect(scoreTimeline(notes, 1.5).times).toEqual([1500, 2000])
 })

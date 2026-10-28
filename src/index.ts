@@ -16,8 +16,22 @@ export { noteSpeedFromSetting } from './core/geometry'
 export { noteKey } from './core/noteKey'
 export { SENSOR_AREAS } from './core/sensors'
 export type { SensorArea } from './core/sensors'
-export { BASE_SCORE, BREAK_BONUS, countScoreNotes, FRAME_MS, gradeLoss, GRADES, JUDGE_FRAMES, noteKept, totalBaseScore } from './core/score'
-export type { Grade, ScoreCounts, ScoreKind } from './core/score'
+export {
+  BASE_SCORE,
+  BREAK_BONUS,
+  countScoreNotes,
+  DX_PER_NOTE,
+  FRAME_MS,
+  gradeLoss,
+  GRADES,
+  JUDGE_FRAMES,
+  noteKept,
+  scoreAt,
+  scoreObjects,
+  scoreTimeline,
+  totalBaseScore,
+} from './core/score'
+export type { Grade, ScoreCounts, ScoreKind, ScoreObject, ScoreState, ScoreTimeline } from './core/score'
 export { slideQueues } from './core/slideJudge'
 export type { JudgeStep } from './core/slideJudge'
 export { SlideJudge } from './core/slideCheck'

@@ -65,19 +65,37 @@ export type ScoreCounts = Record<ScoreKind, number>
  * as a hold. A slide contributes its star head (unless it is headless) and one object
  * per slide path, each of which can be a break on its own. Mines do not score.
  */
-export function countScoreNotes(notes: Note[]): ScoreCounts {
-  const counts: ScoreCounts = { tap: 0, hold: 0, slide: 0, touch: 0, break: 0 }
+export interface ScoreObject {
+  /** When it is judged, in milliseconds of chart time. */
+  ms: number
+  kind: ScoreKind
+}
+
+/**
+ * Every scoring object in a chart, in the order it is judged: a hold counts at its
+ * tail and a slide when it reaches its end, which is when the arcade awards them.
+ */
+export function scoreObjects(notes: Note[]): ScoreObject[] {
+  const out: ScoreObject[] = []
   for (const note of notes) {
     if (note.isMine) continue
     if (note.slides.length) {
-      if (note.head !== 'none') counts[note.isBreak ? 'break' : 'tap']++
-      for (const slide of note.slides) counts[slide.isBreak ? 'break' : 'slide']++
+      if (note.head !== 'none') out.push({ ms: note.time * 1000, kind: note.isBreak ? 'break' : 'tap' })
+      for (const slide of note.slides) {
+        out.push({ ms: (note.time + slide.delay + slide.duration) * 1000, kind: slide.isBreak ? 'break' : 'slide' })
+      }
     } else if (note.kind === 'hold' || note.kind === 'touchHold') {
-      counts[note.isBreak ? 'break' : 'hold']++
+      out.push({ ms: (note.time + note.length) * 1000, kind: note.isBreak ? 'break' : 'hold' })
     } else {
-      counts[note.isBreak ? 'break' : note.kind === 'touch' ? 'touch' : 'tap']++
+      out.push({ ms: note.time * 1000, kind: note.isBreak ? 'break' : note.kind === 'touch' ? 'touch' : 'tap' })
     }
   }
+  return out.sort((a, b) => a.ms - b.ms)
+}
+
+export function countScoreNotes(notes: Note[]): ScoreCounts {
+  const counts: ScoreCounts = { tap: 0, hold: 0, slide: 0, touch: 0, break: 0 }
+  for (const object of scoreObjects(notes)) counts[object.kind]++
   return counts
 }
 
@@ -119,4 +137,89 @@ export const FRAME_MS = 1000 / 60
 export const JUDGE_FRAMES: Record<'tap' | 'touch', Record<Exclude<Grade, 'miss'>, number>> = {
   tap: { criticalPerfect: 1, perfect2: 2, perfect3: 3, great: 4, great2: 5, great3: 6, good: 9 },
   touch: { criticalPerfect: 9, perfect2: 10.5, perfect3: 12, great: 13, great2: 14, great3: 15, good: 18 },
+}
+
+/**
+ * A chart's scoring objects with running totals, so the score at any moment is a
+ * lookup rather than a walk over every note.
+ */
+export interface ScoreTimeline {
+  /** Judge time of each object, ascending. */
+  times: number[]
+  /** Base score of everything judged up to and including each index. */
+  base: number[]
+  /** Breaks judged up to and including each index. */
+  breaks: number[]
+  counts: ScoreCounts
+  totalBase: number
+}
+
+/** `offsetSec` is the chart's `&first`, so the times line up with playback. */
+export function scoreTimeline(notes: Note[], offsetSec = 0): ScoreTimeline {
+  const objects = scoreObjects(notes)
+  const times: number[] = []
+  const base: number[] = []
+  const breaks: number[] = []
+  const counts: ScoreCounts = { tap: 0, hold: 0, slide: 0, touch: 0, break: 0 }
+  let runningBase = 0
+  let runningBreaks = 0
+  for (const object of objects) {
+    counts[object.kind]++
+    runningBase += BASE_SCORE[object.kind]
+    if (object.kind === 'break') runningBreaks++
+    times.push(object.ms + offsetSec * 1000)
+    base.push(runningBase)
+    breaks.push(runningBreaks)
+  }
+  return { times, base, breaks, counts, totalBase: runningBase }
+}
+
+/**
+ * What a run that hit everything perfectly would read at this moment.
+ *
+ * Nothing here is judged against a player, so this is the arcade's counters for a
+ * flawless play: it says how much of the chart's score is already behind you.
+ */
+export interface ScoreState {
+  /** Objects judged so far, and the chart's total. */
+  combo: number
+  total: number
+  /** Counted up from zero, reaching 101% at the end. */
+  achievement: number
+  /** From 100%: the base is taken as kept, so only the break bonus comes in. */
+  achievement100: number
+  /** From 101%: nothing is ever lost on a perfect run, so this does not move. */
+  achievement101: number
+  dxScore: number
+  dxTotal: number
+}
+
+/** Each object is worth three DX points, all of which a critical perfect keeps. */
+export const DX_PER_NOTE = 3
+
+export function scoreAt(timeline: ScoreTimeline, ms: number): ScoreState {
+  const { times, counts, totalBase } = timeline
+  // how many objects have been judged by now
+  let lo = 0
+  let hi = times.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (times[mid]! <= ms) lo = mid + 1
+    else hi = mid
+  }
+  const judged = lo
+  const base = judged ? timeline.base[judged - 1]! : 0
+  const breaks = judged ? timeline.breaks[judged - 1]! : 0
+  // the bonus pool is one percent, shared out as the breaks go by
+  const bonus = counts.break ? breaks / counts.break : 0
+  const full = counts.break ? 1 : 0
+  return {
+    combo: judged,
+    total: times.length,
+    achievement: totalBase ? (base / totalBase) * 100 + bonus : 0,
+    achievement100: 100 + bonus,
+    achievement101: 100 + full,
+    dxScore: judged * DX_PER_NOTE,
+    dxTotal: times.length * DX_PER_NOTE,
+  }
 }

@@ -82,6 +82,7 @@ export class SimaiPlayer {
   private clock: Clock | null = null
   private ownsAudio = false
   private prepared: PreparedChart | null = null
+  private _first = 0
   private _chart: Chart | null = null
   private speed: number
   private touchSpeed: number
@@ -140,6 +141,11 @@ export class SimaiPlayer {
     return this._chart
   }
 
+  /** Seconds from the start of the audio to chart time zero (`&first`). */
+  get first(): number {
+    return this._first
+  }
+
   /** The time being shown: the playback clock, or the scrub position while scrubbing. */
   get currentTime(): number {
     if (this.shuttle) return this.shuttlePosition(this.shuttle)
@@ -187,6 +193,7 @@ export class SimaiPlayer {
     }
 
     this._chart = chart
+    this._first = first
     this.prepared = prepareChart(chart, first)
     const times = new Set<number>()
     for (const p of this.prepared.notes) times.add(Math.round(p.time * 1000) / 1000)
