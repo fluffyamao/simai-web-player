@@ -105,6 +105,24 @@ const hitPreset = $<HTMLSelectElement>('hitPreset')
 for (const p of HIT_SOUND_PRESETS) hitPreset.append(new Option(p.name, p.id))
 hitPreset.value = player.hitSoundPreset
 hitPreset.addEventListener('change', () => player.setHitSoundPreset(hitPreset.value))
+// the user's own hit sound files, kept only in this browser
+const hitPack = $<HTMLInputElement>('hitPack')
+const hitPackInfo = $('hitPackInfo')
+const showPack = () => {
+  const files = Object.entries(player.hitSoundPack)
+  hitPackInfo.textContent = files.length ? `音包：${files.map(([k, n]) => `${k}=${n}`).join('，')}` : ''
+}
+void player.hitSoundPackRestored.then(showPack)
+hitPack.addEventListener('change', async () => {
+  const { loaded, failed } = await player.loadHitSoundPack(hitPack.files ?? [])
+  showPack()
+  if (Object.keys(loaded).length === 0) hitPackInfo.textContent = '文件夹里没有认得的打击音文件'
+  if (failed.length) hitPackInfo.textContent += `（无法解码：${failed.join('、')}）`
+})
+$('hitPackClear').addEventListener('click', async () => {
+  await player.clearHitSoundPack()
+  showPack()
+})
 const KIND_NAMES: [HitSoundKind, string][] = [
   ['answer', 'Answer'],
   ['tap', 'Tap'],

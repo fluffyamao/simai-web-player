@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { hitSoundEvents, HitSoundPlayer, type HitSoundKind } from './audio/hitSounds'
+import { assignFiles, clearStoredPack, decodePack, loadStoredPack, savePack, type StoredFile } from './audio/soundPack'
 import { FreeClock, MediaClock, type Clock } from './core/clock'
 import { noteSpeedFromSetting } from './core/geometry'
 import { parseSimai } from './parser/simai'
@@ -25,6 +26,8 @@ export interface PlayerOptions {
   hitSoundVolume?: number
   /** Hit sound set, an id from HIT_SOUND_PRESETS. Default 'classic'. */
   hitSoundPreset?: string
+  /** Restore the hit sound pack the user loaded last time (kept in this browser). Default true. */
+  restoreHitSoundPack?: boolean
   /**
    * Scrub by dragging left/right on the chart (the canvas width spans 2 seconds, Shift for
    * finer) and step note by note with the mouse wheel. Default true.
@@ -92,6 +95,8 @@ export class SimaiPlayer {
   private dirty = true
   private lastTime = -1
   private listeners = new Set<TimeListener>()
+  /** Resolves once a hit sound pack saved in this browser has been restored (or there was none). */
+  readonly hitSoundPackRestored: Promise<void>
   private scrub: Scrub | null = null
   /** Sorted unique audio times of notes and slide starts, for stepping. */
   private noteTimes: number[] = []
@@ -112,6 +117,15 @@ export class SimaiPlayer {
     this.sounds.enabled = options.hitSounds ?? true
     this.sounds.volume = options.hitSoundVolume ?? 0.5
     if (options.hitSoundPreset) this.sounds.preset = options.hitSoundPreset
+    this.hitSoundPackRestored =
+      (options.restoreHitSoundPack ?? true)
+        ? loadStoredPack()
+            .then(decodePack)
+            .then(({ sounds }) => {
+              if (sounds.length) this.sounds.setPack(sounds)
+            })
+            .catch(() => {})
+        : Promise.resolve()
     this.resizeObserver = new ResizeObserver(() => {
       if (this.renderer.resize()) this.dirty = true
     })
@@ -358,6 +372,36 @@ export class SimaiPlayer {
   /** Switch the hit sound set (an id from HIT_SOUND_PRESETS). */
   setHitSoundPreset(id: string) {
     this.sounds.preset = id
+  }
+
+  /**
+   * Use the user's own hit sound files (e.g. from a folder picker). Files are recognised by
+   * name (tap.wav, ex.wav, break.wav, touch.wav, slide.wav, firework.wav, answer.wav,
+   * break_slide.wav, or MajdataPlay's tap_perfect.wav, tap_ex.wav, touch_hanabi.wav, ...);
+   * leading silence is trimmed. They stay in this browser and are never uploaded.
+   * Sounds the pack lacks come from the chosen set.
+   */
+  async loadHitSoundPack(files: Iterable<File>): Promise<{ loaded: Partial<Record<HitSoundKind, string>>; failed: string[] }> {
+    const chosen = assignFiles([...files])
+    const stored: StoredFile[] = await Promise.all(
+      [...chosen].map(async ([kind, file]) => ({ kind, name: file.name, bytes: await file.arrayBuffer() })),
+    )
+    const { sounds, failed } = await decodePack(stored)
+    if (sounds.length === 0) return { loaded: {}, failed }
+    this.sounds.setPack(sounds)
+    await savePack(stored.filter((f) => sounds.some((s) => s.kind === f.kind)))
+    return { loaded: this.sounds.packFiles, failed }
+  }
+
+  /** Go back to the chosen set's sounds and forget the stored pack. */
+  async clearHitSoundPack() {
+    this.sounds.setPack([])
+    await clearStoredPack()
+  }
+
+  /** File names of the user's hit sound pack in use, by sound (empty without a pack). */
+  get hitSoundPack(): Partial<Record<HitSoundKind, string>> {
+    return this.sounds.packFiles
   }
 
   /** Play one hit sound now, to audition a sound set. Call from a user gesture. */

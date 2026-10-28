@@ -48,6 +48,11 @@ player.setFireworks(false) // hide the burst of `f` touches
 player.setHitSounds(true, 0.3)
 player.setHitSoundPreset('wood') // sound sets: HIT_SOUND_PRESETS (classic, wood, chip, crisp, marimba)
 player.previewHitSound('break')  // audition one sound
+// the user's own hit sound files (e.g. from <input type="file" webkitdirectory>): recognised by
+// name (tap.wav, ex.wav, break.wav, ... or MajdataPlay's tap_perfect.wav, ...), leading
+// silence trimmed, kept only in this browser (IndexedDB) and restored next time
+await player.loadHitSoundPack(input.files)
+player.clearHitSoundPack()
 player.onTime((t) => { /* every frame while time changes */ })
 
 // progress bar (<input type="range" min="0" max="1">): drag along it to jump anywhere;

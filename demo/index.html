@@ -50,6 +50,9 @@
         <input id="hitVolume" type="range" min="0" max="1" step="0.05" value="0.5" style="width: 6em" />
         <select id="hitPreset" title="打击音音色"></select>
         <span id="hitPreview"></span>
+        <label title="选择一个装有打击音文件的文件夹（tap.wav、break.wav… 或 MajdataPlay 的 tap_perfect.wav…），只保存在本浏览器">加载打击音包 <input id="hitPack" type="file" webkitdirectory /></label>
+        <button id="hitPackClear">清除音包</button>
+        <span id="hitPackInfo" style="color:#8f9ab3;font-size:13px"></span>
         <span id="info2" style="color:#8f9ab3;font-size:13px">空格 播放/暂停 · ← → 跳 2 秒 · , . 上/下一个音符 · 在谱面上左右拖动微调（Shift 更细）· 滚轮逐个音符 · 拖进度条时把鼠标移开进度条可精细拖动</span>
       </div>
       <div id="errors"></div>
