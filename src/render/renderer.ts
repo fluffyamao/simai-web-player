@@ -42,6 +42,20 @@ const SLIDE_END_SEC = 0.3
 /** How far each of the 11 wifi bars sits from the start, as a fraction of the way to the ends. */
 const WIFI_BAR_SCALES = [0.084, 0.148, 0.223, 0.301, 0.381, 0.48, 0.574, 0.668, 0.763, 0.856, 0.965]
 
+/**
+ * The guide ring under each tap, star and hold head (MajdataPlay's TapLine,
+ * NoteGuideSkins/*.png): a full circle through the note, brightest at the note and
+ * fading away on both sides. Opacity by degrees from the note, sampled from the sprite.
+ */
+const GUIDE_FADE: [number, number][] = [
+  [0, 1], [10, 0.95], [20, 0.77], [30, 0.52], [45, 0.27], [60, 0.13],
+  [75, 0.08], [90, 0.047], [110, 0.024], [130, 0.012], [150, 0.006], [180, 0],
+]
+/** Ring width at the judge ring; it scales with the ring's radius. */
+const GUIDE_WIDTH = 0.07
+/** The ring shows once the note has grown past this scale. */
+const GUIDE_MIN_SCALE = 0.3
+
 /** Sensor polygons by the names a judge step uses ("C" covers both halves). */
 const SENSOR_BY_NAME = new Map<string, SensorArea[]>()
 for (const a of SENSOR_AREAS) {
@@ -70,6 +84,19 @@ function lighten(color: string, t: number): string {
   const n = parseInt(m[1]!, 16)
   const mix = (c: number) => Math.round(c + (255 - c) * t)
   return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`
+}
+
+/** The red, green and blue of a #rgb, #rrggbb or rgb()/rgba() colour, or null for anything else. */
+function rgbOf(color: string): [number, number, number] | null {
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(color)
+  if (short) return [1, 2, 3].map((i) => parseInt(short[i]! + short[i]!, 16)) as [number, number, number]
+  const hex = /^#([0-9a-f]{6})$/i.exec(color)
+  if (hex) {
+    const n = parseInt(hex[1]!, 16)
+    return [n >> 16, (n >> 8) & 255, n & 255]
+  }
+  const fn = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(color)
+  return fn ? [+fn[1]!, +fn[2]!, +fn[3]!] : null
 }
 
 /** How long a sensor stays lit after its touch ends. */
@@ -170,6 +197,7 @@ export class Renderer {
   private colors: ReadonlyMap<string, string> | null = null
   private hits: Hit[] = []
   private keys = new WeakMap<Note, string>()
+  private guides = new Map<string, CanvasGradient | string>()
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d')
@@ -211,6 +239,13 @@ export class Renderer {
       if (alpha > 0) this.drawSlideTrack(s, now, alpha)
     }
     this.drawEachLines(chart, now, opts.speed)
+    for (let i = chart.notes.length - 1; i >= 0; i--) {
+      const p = chart.notes[i]!
+      if (p.note.location.group !== 'button' || p.note.head === 'none') continue
+      const speed = opts.speed * p.note.hspeed
+      if (p.time - appearLead(speed) > now || p.end < now) continue
+      this.drawGuide(p, now, speed)
+    }
 
     // later notes underneath, earlier ones on top
     for (let i = chart.notes.length - 1; i >= 0; i--) {
@@ -867,6 +902,64 @@ export class Renderer {
       }
       ctx.globalAlpha = 1
     }
+  }
+
+  /**
+   * The guide ring of a tap, star or hold head. It sits on the spawn circle while the note
+   * grows, then passes through the note; a hold's stays on the judge ring until it ends.
+   */
+  private drawGuide(p: PreparedNote, now: number, speed: number) {
+    const { note } = p
+    let radius: number
+    if (note.kind === 'hold') {
+      if (now > p.time + note.length) return
+      const state = holdState(now - p.time, note.length, speed)
+      if (!state || state.scale <= GUIDE_MIN_SCALE) return
+      radius = state.head
+    } else {
+      if (now > p.time) return
+      const state = tapState(now - p.time, speed)
+      if (!state || state.scale <= GUIDE_MIN_SCALE) return
+      radius = Math.abs(state.distance)
+    }
+    const { ctx } = this
+    this.enterLane(note.location.index)
+    ctx.strokeStyle = this.guideStyle(this.guideColor(note))
+    ctx.lineWidth = Math.max((GUIDE_WIDTH * radius) / JUDGE_RADIUS, 1 / this.k)
+    ctx.beginPath()
+    ctx.arc(0, 0, radius, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  /** Mines take the colour they would have as a plain note, as in MajdataPlay. */
+  private guideColor(note: Note): string {
+    const custom = this.custom(note)
+    if (custom) return custom
+    if (note.isBreak) return COLORS.break
+    if (note.isEach) return COLORS.each
+    return note.kind !== 'hold' && this.isStar(note) ? COLORS.star : COLORS.tap
+  }
+
+  /** A conic gradient around the origin, opaque along +x; drawn inside {@link enterLane}. */
+  private guideStyle(color: string): CanvasGradient | string {
+    let style = this.guides.get(color)
+    if (style) return style
+    const rgb = rgbOf(color)
+    if (!rgb || typeof this.ctx.createConicGradient !== 'function') {
+      style = color
+    } else {
+      const g = this.ctx.createConicGradient(0, 0, 0)
+      const [r, gr, b] = rgb
+      for (const [deg, a] of GUIDE_FADE) {
+        g.addColorStop(deg / 360, `rgba(${r}, ${gr}, ${b}, ${a})`)
+        if (deg > 0 && deg < 180) g.addColorStop(1 - deg / 360, `rgba(${r}, ${gr}, ${b}, ${a})`)
+      }
+      g.addColorStop(1, `rgba(${r}, ${gr}, ${b}, 1)`)
+      style = g
+    }
+    this.guides.set(color, style)
+    return style
   }
 
   /** Arc on circle `radius` from button a to button b, the short way round. */
