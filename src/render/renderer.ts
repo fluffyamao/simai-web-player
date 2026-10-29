@@ -56,6 +56,19 @@ const GUIDE_WIDTH = 0.07
 /** The ring shows once the note has grown past this scale. */
 const GUIDE_MIN_SCALE = 0.3
 
+/**
+ * Hit effects are coloured by the judgement, not the note (MajdataPlay's EffectSprites
+ * Hex*.png and Star*.png for taps and breaks, HoldEffectDisplayer, touchPerfect/Great/Good.anim).
+ */
+type Judgement = 'perfect' | 'great' | 'good'
+const EFFECT_COLORS: Record<Judgement, { tap: string; break: string; hold: string; touch: string }> = {
+  perfect: { tap: '#f8ed6c', break: '#f9ef65', hold: '#ffe300', touch: '#ffe677' },
+  great: { tap: '#fe98fe', break: '#fc92b0', hold: '#ffb3f0', touch: '#fface1' },
+  good: { tap: '#42f47a', break: '#40f778', hold: '#8fff96', touch: '#5eff67' },
+}
+/** The player only plays itself, and autoplay hits every note perfectly. */
+const AUTOPLAY_JUDGEMENT: Judgement = 'perfect'
+
 /** Sensor polygons by the names a judge step uses ("C" covers both halves). */
 const SENSOR_BY_NAME = new Map<string, SensorArea[]>()
 for (const a of SENSOR_AREAS) {
@@ -728,8 +741,8 @@ export class Renderer {
     if (now > holdEnd) {
       const t = (now - holdEnd) / HIT_EFFECT_SEC
       if (t > 1) return
-      this.drawHexBurst(pos.x, pos.y, t, this.touchColor(note))
-      if (note.isBreak) this.drawBurst(pos.x, pos.y, t, COLORS.break)
+      // a break touch's effect is the same as any other's
+      this.drawHexBurst(pos.x, pos.y, t, EFFECT_COLORS[AUTOPLAY_JUDGEMENT].touch)
       return
     }
     const state = touchState(now - p.time, timing)
@@ -995,7 +1008,7 @@ export class Renderer {
     if (now <= holdEnd && note.kind === 'hold') {
       // pulsing glow while the hold is held
       const pulse = 0.5 + 0.5 * Math.sin(now * 20)
-      ctx.fillStyle = this.noteColor(note, false)
+      ctx.fillStyle = EFFECT_COLORS[AUTOPLAY_JUDGEMENT].hold
       ctx.globalAlpha = 0.25 + 0.2 * pulse
       ctx.beginPath()
       ctx.arc(pt.x, pt.y, NOTE_RADIUS * 1.1, 0, Math.PI * 2)
@@ -1005,35 +1018,50 @@ export class Renderer {
     }
     const t = (now - holdEnd) / HIT_EFFECT_SEC
     if (t < 0 || t > 1) return
-    this.drawHexBurst(pt.x, pt.y, t, this.noteColor(note, this.isStar(note)))
-    if (note.isBreak) this.drawBurst(pt.x, pt.y, t, COLORS.break)
+    const colors = EFFECT_COLORS[AUTOPLAY_JUDGEMENT]
+    // breaks burst into stars instead of hexagons
+    this.drawHexBurst(pt.x, pt.y, t, note.isBreak ? colors.break : colors.tap, note.isBreak)
   }
 
-  /** Hit effect: hexagon outlines growing out of a point and fading; t goes 0..1. */
-  private drawHexBurst(x: number, y: number, t: number, color: string) {
+  /**
+   * Hit effect: outlines growing out of a point and fading, a white core in a coloured glow
+   * like MajdataPlay's effect sprites; hexagons, or stars for breaks. t goes 0..1.
+   */
+  private drawHexBurst(x: number, y: number, t: number, color: string, star = false) {
     const { ctx } = this
     const ease = 1 - Math.pow(1 - t, 2)
+    const width = 0.07 * (1 - t) + 0.02
     ctx.save()
-    ctx.strokeStyle = lighten(color, 0.3)
     ctx.lineJoin = 'round'
     ctx.globalAlpha = 1 - t
-    ctx.lineWidth = 0.07 * (1 - t) + 0.02
     for (let k = 0; k < 3; k++) {
       const r = NOTE_RADIUS * (0.7 + ease * (0.7 + k * 0.35))
-      const turn = k * 0.35 + ease * 0.4
-      ctx.beginPath()
-      for (let i = 0; i < 6; i++) {
-        const a = turn + (i * Math.PI) / 3
-        if (i === 0) ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a))
-        else ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a))
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(k * 0.35 + ease * 0.4)
+      if (star) {
+        this.starPath(r, r * 0.47)
+      } else {
+        ctx.beginPath()
+        for (let i = 0; i < 6; i++) {
+          const a = (i * Math.PI) / 3
+          if (i === 0) ctx.moveTo(r * Math.cos(a), r * Math.sin(a))
+          else ctx.lineTo(r * Math.cos(a), r * Math.sin(a))
+        }
+        ctx.closePath()
       }
-      ctx.closePath()
+      ctx.restore()
+      ctx.strokeStyle = color
+      ctx.lineWidth = width * 2.2
+      ctx.stroke()
+      ctx.strokeStyle = lighten(color, 0.75)
+      ctx.lineWidth = width * 0.7
       ctx.stroke()
     }
     ctx.restore()
   }
 
-  /** Rays flying out of a point, for breaks; t goes 0..1. */
+  /** Rays flying out of a point, where a break slide ends; t goes 0..1. */
   private drawBurst(x: number, y: number, t: number, color: string) {
     const { ctx } = this
     const ease = 1 - Math.pow(1 - t, 2)
