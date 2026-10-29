@@ -128,6 +128,8 @@ interface PreparedNote {
   time: number
   /** Audio time when everything about the note (hold tail, effects) is done. */
   end: number
+  /** How fast a star head turns, radians per second (negative is clockwise). */
+  spin: number
 }
 
 interface EachGroup {
@@ -148,6 +150,8 @@ export function prepareChart(chart: Chart, first: number): PreparedChart {
     note,
     time: note.time + first,
     end: noteEndTime(note) + first + HIT_EFFECT_SEC,
+    // a $$ tap spins at MajdataPlay's 440°/s; a slide's star takes its first slide's speed below
+    spin: note.head === 'spinStar' ? (-440 * Math.PI) / 180 : 0,
   }))
   const byTime = new Map<number, { positions: number[]; hspeed: number }>()
   for (const { note, time } of notes) {
@@ -162,7 +166,14 @@ export function prepareChart(chart: Chart, first: number): PreparedChart {
     positions: [...new Set(g.positions)].sort((a, b) => a - b),
     hspeed: g.hspeed,
   }))
-  return { notes, eachGroups, slides: prepareSlides(notes) }
+  const slides = prepareSlides(notes)
+  const firstSlide = new Map<Note, PreparedSlide>()
+  for (const s of slides) if (!firstSlide.has(s.note)) firstSlide.set(s.note, s)
+  for (const p of notes) {
+    const s = firstSlide.get(p.note)
+    if (s) p.spin = s.spin
+  }
+  return { notes, eachGroups, slides }
 }
 
 export interface RenderOptions {
@@ -493,7 +504,8 @@ export class Renderer {
     this.applyExGlow(note)
     const color = this.noteColor(note, star)
     if (star) {
-      if (note.head === 'spinStar') ctx.rotate(-now * Math.PI * 2)
+      // it turns from the moment it appears, as in MajdataPlay's TapDrop
+      ctx.rotate(p.spin * (now - (p.time - appearLead(speed))))
       this.drawStarShape(color)
     } else {
       this.drawTapRing(color, note.isEach && !note.isBreak && !note.isMine)

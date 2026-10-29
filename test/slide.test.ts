@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { buildArrows, pathFromSlideCode, pointA } from '../src/core/slidePath'
 import { slideCode } from '../src/core/slideShapes'
 import type { SlideShape } from '../src/parser/types'
+import { parseSimai } from '../src/parser/simai'
+import { prepareChart } from '../src/render/renderer'
 
 /** Bars in the standard prefabs, from MajRadar StandardSlideBarCounts (start at button 1). */
 const PREFAB_BARS: [SlideShape, number, number, number?][] = [
@@ -39,5 +41,33 @@ describe('standard slide shapes', () => {
   it('p goes counter-clockwise, through the left side when going 1 to 5', () => {
     const path = pathFromSlideCode(slideCode(1, { shape: 'p', vertices: [5] })!)
     expect(path.pointAt(0.5).x).toBeLessThan(-1)
+  })
+})
+
+describe('star tap spin', () => {
+  const spinOf = (src: string) => {
+    const chart = prepareChart(parseSimai(src), 0)
+    return (chart.notes[0]!.spin * 180) / Math.PI
+  }
+
+  it('follows MajdataPlay: arrows plus one per part, over the slide time', () => {
+    const slide = prepareChart(parseSimai('(120)1-5[4:1],E'), 0).slides[0]!
+    const length = slide.parts.reduce((s, p) => s + (p.kind === 'path' ? p.arrows.length - 1 : 20), 0)
+    // 1-5 has about 20 bars; [4:1] at 120 bpm is 0.5 s
+    expect(spinOf('(120)1-5[4:1],E')).toBeCloseTo(-68.54838709677419 * ((length * 0.47) / 500 / 0.0034803742562305))
+  })
+
+  it('turns faster for faster slides, up to 1080°/s', () => {
+    expect(spinOf('(120)1-5[2:1],E')).toBeGreaterThan(spinOf('(120)1-5[4:1],E'))
+    expect(spinOf('(120)1-5[64:1],E')).toBeCloseTo(-1080)
+  })
+
+  it('counts a wifi as 20', () => {
+    expect(spinOf('(120)1w5[4:1],E')).toBeCloseTo(-68.54838709677419 * ((20 * 0.47) / 500 / 0.0034803742562305))
+  })
+
+  it('leaves $ taps still and spins $$ taps at 440°/s', () => {
+    expect(spinOf('(120)1$,E')).toBe(0)
+    expect(spinOf('(120)1$$,E')).toBeCloseTo(-440)
   })
 })

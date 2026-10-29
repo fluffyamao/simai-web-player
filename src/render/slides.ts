@@ -57,6 +57,8 @@ export interface PreparedSlide {
   parts: SlidePart[]
   /** Judge queue steps; empty when the game would reject the slide. */
   judge: JudgeMark[]
+  /** How fast its star tap turns on the way in, radians per second (negative is clockwise). */
+  spin: number
 }
 
 /** Bars in a wifi slide; also its weight when chained (MajRadar counts 12). */
@@ -88,6 +90,18 @@ function buildPart(start: number, seg: SlidePath['segments'][number]): SlidePart
 }
 
 const weight = (p: SlidePart) => (p.kind === 'wifi' ? WIFI_BARS : Math.max(1, p.arrows.length - 2))
+
+/**
+ * Star tap spin, from MajdataPlay's NoteLoader.UpdateStarRotateSpeed: faster for slides
+ * with more arrows per second, at most 1080°/s. Each part counts its arrows plus one;
+ * a wifi counts 20.
+ */
+function starSpin(parts: SlidePart[], duration: number): number {
+  const length = parts.reduce((s, p) => s + (p.kind === 'wifi' ? 20 : p.arrows.length - 1), 0)
+  const speed = (length * 0.47) / (duration * 1000)
+  const degrees = duration > 0 ? Math.min(68.54838709677419 * (speed / 0.0034803742562305), 1080) : 1080
+  return (-degrees * Math.PI) / 180
+}
 
 export function prepareSlides(notes: { note: Note; time: number }[]): PreparedSlide[] {
   const result: PreparedSlide[] = []
@@ -160,6 +174,7 @@ export function prepareSlides(notes: { note: Note; time: number }[]): PreparedSl
         isEach: (perTime.get(Math.round(time * 1e6)) ?? 0) >= 2,
         parts,
         judge,
+        spin: starSpin(parts, slide.duration),
       })
     }
   }
