@@ -90,6 +90,17 @@ describe('wifi', () => {
     j.check(['A6', 'A5', 'A4'])
     expect(j.finished).toBe(true)
   })
+
+  it('finishes on the move that lets go of B1 while B5 is held', () => {
+    // the judge reads B5 a frame after B1 is finished; the held hand gives it that frame
+    const run = play(1, [seg('w', 5)], [
+      [tap('B8'), tap('B2')],
+      [tap('A6'), tap('A4')],
+      [press('B5'), press('B1')],
+      [null, release],
+    ])
+    expect(run.finishedAtStep).toBe(3)
+  })
 })
 
 describe('hand rules', () => {

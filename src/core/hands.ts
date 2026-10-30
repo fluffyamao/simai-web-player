@@ -19,6 +19,9 @@ export type HandAction =
 
 export const MAX_HANDS = 2
 
+/** Judge frames a pose may take to settle; a queue never needs more than its length. */
+const SETTLE_FRAMES = 64
+
 const ring = (g: string) => Array.from({ length: 8 }, (_, i) => `${g}${i + 1}`)
 
 /** Every sensor a hand can touch, in board order. */
@@ -68,7 +71,8 @@ export interface HandRun {
 
 /**
  * Play a list of steps on a slide judge. `steps[k][h]` is what hand h does in step k (null:
- * nothing). Within a step every hand acts at once; a tap is let go in a second frame.
+ * nothing). Within a step every hand acts at once; a tap is let go in a second frame. Each
+ * recorded frame is the judge after the hands have stayed in that pose long enough to settle.
  */
 export function runHands(judge: SlideJudge, steps: (HandAction | null)[][]): HandRun {
   const run: HandRun = { frames: [], touches: 0, finished: false, finishedAtStep: null, error: null }
@@ -77,7 +81,15 @@ export function runHands(judge: SlideJudge, steps: (HandAction | null)[][]): Han
   const frame = (step: number) => {
     const pressed = new Set<string>()
     for (const hand of hands) if (hand.at) for (const s of handSensors(hand.size, hand.at)!) pressed.add(s)
-    judge.check(pressed)
+    // in the game the hands stay put for many frames before the next move, and the judge moves at
+    // most one step past a finished one per frame: read the same sensors until nothing changes
+    let state = ''
+    for (let i = 0; i < SETTLE_FRAMES; i++) {
+      judge.check(pressed)
+      const next = JSON.stringify(judge.state())
+      if (next === state) break
+      state = next
+    }
     run.frames.push({
       step,
       hands: hands.map((hand) => ({ ...hand })),
