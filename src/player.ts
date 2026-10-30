@@ -22,13 +22,18 @@ export interface PlayerOptions {
   showMustTouch?: boolean
   /** Colours around the round field, e.g. a transparent background on a light page. Default dark. */
   frame?: FrameColors
-  /** Play synthesised hit sounds. Default true. */
+  /** Play the B_full hit sound samples. Default true. */
   hitSounds?: boolean
+  /**
+   * Folder (URL) holding the B_full WAV files: answer.wav, tap.wav, ... (see
+   * assets/hit-sounds/manifest.json). They are not part of this repository. Default `/hit-sounds/B_full/`.
+   */
+  hitSoundBase?: string
   /** Hit sound volume, 0..1. Default 0.5. */
   hitSoundVolume?: number
   /** Music volume, 0..1. Default 1. Browsers that keep the volume to the device (iOS) ignore it. */
   musicVolume?: number
-  /** Hit sound set, an id from HIT_SOUND_PRESETS. Default 'classic'. */
+  /** Hit sound set. B_full is the only built-in set; old IDs resolve to it. */
   hitSoundPreset?: string
   /** Restore the hit sound pack the user loaded last time (kept in this browser). Default true. */
   restoreHitSoundPack?: boolean
@@ -96,7 +101,7 @@ export class SimaiPlayer {
   private showSlideJudge: boolean
   private showMustTouch: boolean
   private frameColors: FrameColors
-  private sounds = new HitSoundPlayer()
+  private sounds: HitSoundPlayer
   private noteColors: Map<string, string> | null = null
   private frame = 0
   private dirty = true
@@ -114,6 +119,7 @@ export class SimaiPlayer {
   private resizeObserver: ResizeObserver
 
   constructor(readonly canvas: HTMLCanvasElement, options: PlayerOptions = {}) {
+    this.sounds = new HitSoundPlayer(options.hitSoundBase)
     this.renderer = new Renderer(canvas)
     this.speed = noteSpeedFromSetting(options.tapSpeed ?? 7.5)
     this.touchSpeed = options.touchSpeed ?? 7.5
@@ -126,7 +132,7 @@ export class SimaiPlayer {
     this.sounds.volume = options.hitSoundVolume ?? 0.5
     this._musicVolume = clamp01(options.musicVolume ?? 1)
     if (options.hitSoundPreset) this.sounds.preset = options.hitSoundPreset
-    this.hitSoundPackRestored =
+    this.hitSoundPackRestored = this.sounds.ready.then(() =>
       (options.restoreHitSoundPack ?? true)
         ? loadStoredPack()
             .then(decodePack)
@@ -134,7 +140,7 @@ export class SimaiPlayer {
               if (sounds.length) this.sounds.setPack(sounds)
             })
             .catch(() => {})
-        : Promise.resolve()
+        : Promise.resolve())
     this.resizeObserver = new ResizeObserver(() => {
       if (this.renderer.resize()) this.dirty = true
     })
@@ -174,6 +180,7 @@ export class SimaiPlayer {
   }
 
   async load(options: LoadOptions): Promise<Chart> {
+    await this.sounds.ready
     const difficulty = options.maidata.difficulties.find((d) => d.index === options.difficulty)
     if (!difficulty) throw new Error(`difficulty ${options.difficulty} not found`)
     const bpm = parseFloat(options.maidata.meta.wholebpm ?? '')
@@ -391,9 +398,16 @@ export class SimaiPlayer {
     return this.sounds.volume
   }
 
+  /** Files that failed to download or decode. Playback can still proceed with the rest. */
+  get hitSoundLoadErrors(): readonly string[] { return this.sounds.loadErrors }
+
   setHitSoundVolume(volume: number) {
     this.sounds.volume = volume
   }
+
+  /** Per-sound level (0..1), multiplied by the master hit-sound volume. */
+  setHitSoundKindVolume(kind: HitSoundKind, volume: number) { this.sounds.setKindVolume(kind, volume) }
+  getHitSoundKindVolume(kind: HitSoundKind): number { return this.sounds.getKindVolume(kind) }
 
   /** Music volume, 0..1. */
   get musicVolume(): number {
@@ -453,6 +467,8 @@ export class SimaiPlayer {
   previewHitSound(kind: HitSoundKind) {
     this.sounds.preview(kind)
   }
+
+  stopHitSoundPreview() { this.sounds.stopPreview() }
 
   private updateSoundEvents() {
     this.sounds.setEvents(this.prepared ? hitSoundEvents(this.prepared.notes, this.fireworks) : [])

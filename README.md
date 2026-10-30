@@ -9,8 +9,10 @@ Note motion, slide paths and play-field geometry are ported from
 The simai parser is written from scratch, following the simai documentation and
 [SimaiSharp](https://github.com/reflektone-games/SimaiSharp) (MIT).
 
-This project has no affiliation with SEGA. Note shapes are drawn and hit sounds are synthesised in code;
-no game assets are included.
+This project has no affiliation with SEGA. Note shapes are drawn in code; no game assets are included.
+Hit sounds play a B_full WAV pack that is not part of this repository: serve your own copy and point
+`hitSoundBase` at it. The expected files and the sound mapping are in
+[assets/hit-sounds/README.md](assets/hit-sounds/README.md).
 
 ## Status
 
@@ -19,7 +21,7 @@ no game assets are included.
 | M1 parser, taps / holds / breaks / ex / each / star heads, audio sync, seek, playback rate | done |
 | M2 slides: all standard shapes, wifi, chains, `*` multi-slides, fade-in and star motion | done |
 | M3 touch / touch hold, firework burst (can be turned off) | done |
-| M4 hit sounds (synthesised), break / slide-end effects, `<HS*x>` hi-speed | done |
+| M4 hit sounds (B_full samples), break / slide-end effects, `<HS*x>` hi-speed | done |
 
 Standard slides are built as MajdataPlay slide codes (`src/core/slideShapes.ts`); their arrow counts
 are tested against the official prefab counts. Not handled yet: pseudo-each (`` ` ``) timing offsets, `<SV*x>` tags (ignored), judgement text.
@@ -50,9 +52,12 @@ player.setFireworks(false) // hide the burst of `f` touches
 player.setFrame({ background: null, label: '#5f6f8f' })
 player.setHitSounds(true, 0.3)
 player.setHitSoundVolume(0.8)
+player.setHitSoundKindVolume('tap', 0.65) // each sound is 0..1, multiplied by master volume
+player.setHitSoundKindVolume('slide', 0.4)
 player.setMusicVolume(0.6)
-player.setHitSoundPreset('wood') // sound sets: HIT_SOUND_PRESETS (classic, wood, chip, crisp, marimba)
+player.setHitSoundPreset('b-full') // B_full is the only built-in sound set; legacy IDs resolve to it
 player.previewHitSound('break')  // audition one sound
+player.stopHitSoundPreview()     // stop the audition without stopping chart playback
 // the user's own hit sound files (e.g. from <input type="file" webkitdirectory>): recognised by
 // name (tap.wav, ex.wav, break.wav, ... or MajdataPlay's tap_perfect.wav, ...), leading
 // silence trimmed, kept only in this browser (IndexedDB) and restored next time
@@ -75,6 +80,10 @@ attachShuttleButton(player, forwardButton, 0.5)
 ```
 
 `player.chart.errors` lists any parse errors with line and column.
+
+The player fetches the hit sounds from `hitSoundBase` (default `/hit-sounds/B_full/`); from another
+origin, that server must allow CORS. `player.hitSoundLoadErrors` lists any unavailable sounds. The website uses
+`restoreHitSoundPack: false` so an older browser-local pack cannot replace B_full.
 
 ## Development
 

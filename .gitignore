@@ -2,3 +2,5 @@ node_modules/
 dist/
 # local test charts (audio is copyrighted, never commit)
 demo/samples/
+# hit sound samples (not ours to publish): keep a local copy here for the demo, serve them with the site
+assets/hit-sounds/B_full/

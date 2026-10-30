@@ -10,6 +10,11 @@ describe('sound pack file names', () => {
     expect(matchKind('break_slide.wav')?.kind).toBe('breakSlide')
     expect(matchKind('slide_break_start.wav')?.kind).toBe('breakSlide')
     expect(matchKind('answer.mp3')?.kind).toBe('answer')
+    expect(matchKind('cheer.wav')?.kind).toBe('cheer')
+    expect(matchKind('touch_hold.wav')?.kind).toBe('touchHold')
+    expect(matchKind('touch_Hold_riser.wav')?.kind).toBe('touchHold')
+    expect(matchKind('break_slide_cheer.wav')?.kind).toBe('breakSlideCheer')
+    expect(matchKind('slide_break_slide.wav')?.kind).toBe('breakSlideCheer')
   })
 
   it('ignores other files', () => {

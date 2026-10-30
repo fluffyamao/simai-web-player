@@ -10,9 +10,12 @@ const NAMES: Record<HitSoundKind, string[]> = {
   tap: ['tap', 'tap_perfect', 'judge'],
   ex: ['ex', 'tap_ex', 'judge_ex'],
   break: ['break', 'break_tap', 'judge_break'],
+  cheer: ['cheer'],
   touch: ['touch'],
+  touchHold: ['touch_hold', 'touch_hold_riser'],
   slide: ['slide'],
   breakSlide: ['break_slide_start', 'slide_break_start', 'break_slide'],
+  breakSlideCheer: ['break_slide_cheer', 'slide_break_slide'],
   firework: ['firework', 'touch_hanabi', 'hanabi'],
 }
 const AUDIO_EXT = /\.(wav|ogg|mp3|m4a|aac|flac|opus)$/i

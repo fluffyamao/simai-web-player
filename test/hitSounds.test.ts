@@ -13,6 +13,7 @@ describe('hitSoundEvents', () => {
       { time: 1, kind: 'tap' },
       { time: 1.5, kind: 'answer' },
       { time: 1.5, kind: 'break' },
+      { time: 1.5, kind: 'cheer' },
     ])
   })
 
@@ -40,22 +41,30 @@ describe('hitSoundEvents', () => {
     ])
   })
 
-  it('gives break slides their own start sound and a break at the end', () => {
+  it('gives break slides a start sound, then their end judgement plus cheer', () => {
     expect(pairs('(120)1-5[4:1]b,')).toEqual([
       [1, 'answer'],
       [1, 'tap'],
       [1.5, 'breakSlide'],
-      [2, 'break'],
+      [2, 'breakSlideCheer'],
+      [2, 'cheer'],
     ])
   })
 
   it('fires fireworks at the end of a touch hold, only when enabled', () => {
     expect(pairs('(120)Chf[4:1],')).toEqual([
       [1, 'answer'],
-      [1, 'touch'],
+      [1, 'touchHold'],
       [1.5, 'answer'],
+      [1.5, 'tap'],
       [1.5, 'firework'],
     ])
     expect(events('(120)Cf,', false).map((e) => e.kind)).toEqual(['answer', 'touch'])
+  })
+
+  it('stops the touch-hold riser at release and merges overlapping holds', () => {
+    const held = events('(120)Ch[2:1],Ch[2:1],').filter((e) => e.kind === 'touchHold')
+    expect(held).toEqual([{ time: 1, kind: 'touchHold', duration: 1.5 }])
+    expect(events('(120)Ch[4:1],').find((e) => e.kind === 'touchHold')?.duration).toBe(0.5)
   })
 })

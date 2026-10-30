@@ -1,0 +1,57 @@
+[
+  {
+    "file": "answer.wav",
+    "bytes": 38658,
+    "sha256": "c19e16f85fd5f267779eed26839fbe442002f39dcb33a0851fc652136b499c34"
+  },
+  {
+    "file": "break_slide_cheer.wav",
+    "bytes": 115484,
+    "sha256": "efd909fd3c8abdbacac74b5c4ad7e81336a1d2d8b91a2742f2227622c46f2f2a"
+  },
+  {
+    "file": "break_slide.wav",
+    "bytes": 305708,
+    "sha256": "c0260f2612111758bc04da5abdba2fc9c4de66284dbb566ed6313f2ddc7fe967"
+  },
+  {
+    "file": "break.wav",
+    "bytes": 102310,
+    "sha256": "5d4bdb921fa5db043b916e6ec95a3ca9c5fec1651dcc3239b87061936b9f8f04"
+  },
+  {
+    "file": "cheer.wav",
+    "bytes": 196626,
+    "sha256": "b034105b0109ffc6fa5990e73d8489f26894ce2936801e3813ec53956c798137"
+  },
+  {
+    "file": "ex.wav",
+    "bytes": 88842,
+    "sha256": "d4f5b30c0cd566947b7e16b8f073c0e1c015ef2e0f60ae49f0d01477b41ec9c0"
+  },
+  {
+    "file": "firework.wav",
+    "bytes": 378058,
+    "sha256": "2e4a051d663177bab3d2d50a14f0f1c73352eda48d5f66f152e02e76a374f872"
+  },
+  {
+    "file": "slide.wav",
+    "bytes": 251156,
+    "sha256": "a707cf2dd17e173ed2ba853bd69c0b27ee9d6b3a2ca118afddfeaaac66bb3e0d"
+  },
+  {
+    "file": "tap.wav",
+    "bytes": 62444,
+    "sha256": "c845054f6c82c57cb19f19e8a198d9f5954437e78bdb053e336a0c2558d89249"
+  },
+  {
+    "file": "touch_hold.wav",
+    "bytes": 1221896,
+    "sha256": "d0d7a5e2784f94ec00f151ebcc429d92ae358fd51dd1acba4e5eb936e384b43c"
+  },
+  {
+    "file": "touch.wav",
+    "bytes": 72044,
+    "sha256": "171769c2b6fe37fc5f5193c120b86877afa8b1766ea244bac6a80b83cf2ac5bf"
+  }
+]
