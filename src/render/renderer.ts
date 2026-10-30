@@ -189,6 +189,16 @@ export function prepareChart(chart: Chart, first: number): PreparedChart {
   return { notes, eachGroups, slides }
 }
 
+/** The colours around the round field. */
+export interface FrameColors {
+  /** Fill outside the field; null leaves it transparent, so the page shows through. */
+  background: string | null
+  /** The button numbers 1..8 around the ring. */
+  label: string
+}
+
+export const DARK_FRAME: FrameColors = { background: COLORS.background, label: COLORS.label }
+
 export interface RenderOptions {
   /** World units per second, from noteSpeedFromSetting(). */
   speed: number
@@ -204,6 +214,8 @@ export interface RenderOptions {
   showSlideJudge?: boolean
   /** With showSlideJudge, draw the steps that must be touched in orange instead of blue. */
   showMustTouch?: boolean
+  /** Colours around the field. Default DARK_FRAME. */
+  frame?: FrameColors
 }
 
 /** Where a note was drawn in the last frame, in world units, for hit testing. */
@@ -243,12 +255,16 @@ export class Renderer {
     const { ctx, canvas } = this
     const size = canvas.width
     this.k = size / 2 / VIEW_RADIUS
+    const frame = opts.frame ?? DARK_FRAME
     ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.fillStyle = COLORS.background
-    ctx.fillRect(0, 0, size, size)
+    if (frame.background === null) ctx.clearRect(0, 0, size, size)
+    else {
+      ctx.fillStyle = frame.background
+      ctx.fillRect(0, 0, size, size)
+    }
     // world space: origin at centre, y up, 1 unit = 1 world unit
     ctx.setTransform(this.k, 0, 0, -this.k, size / 2, size / 2)
-    this.drawField()
+    this.drawField(frame.label)
     if (opts.showSensors) this.drawSensors(chart, now)
     if (opts.showSlideJudge && chart) this.drawSlideJudge(chart, now, opts.speed, opts.showMustTouch ?? false)
     this.hits = []
@@ -308,7 +324,7 @@ export class Renderer {
     }
   }
 
-  private drawField() {
+  private drawField(label: string) {
     const { ctx } = this
     ctx.fillStyle = COLORS.field
     ctx.beginPath()
@@ -332,7 +348,7 @@ export class Renderer {
       ctx.save()
       ctx.translate(l.x, l.y)
       ctx.scale(1, -1)
-      ctx.fillStyle = COLORS.label
+      ctx.fillStyle = label
       ctx.font = '0.32px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'

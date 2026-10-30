@@ -46,6 +46,8 @@ player.play()
 player.seek(42.5)
 player.setRate(0.5)       // half speed, pitch kept
 player.setFireworks(false) // hide the burst of `f` touches
+// on a light page: leave the square around the round field transparent, darker button numbers
+player.setFrame({ background: null, label: '#5f6f8f' })
 player.setHitSounds(true, 0.3)
 player.setHitSoundVolume(0.8)
 player.setMusicVolume(0.6)

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 export { SimaiPlayer } from './player'
 export type { LoadOptions, PlayerOptions } from './player'
+export { DARK_FRAME } from './render/renderer'
+export type { FrameColors } from './render/renderer'
 export { attachProgressBar } from './ui/progressBar'
 export { attachShuttleButton } from './ui/shuttle'
 export { HIT_SOUND_PRESETS } from './audio/presets'

@@ -5,7 +5,7 @@ import { FreeClock, MediaClock, type Clock } from './core/clock'
 import { noteSpeedFromSetting } from './core/geometry'
 import { parseSimai } from './parser/simai'
 import type { Chart, Maidata } from './parser/types'
-import { prepareChart, Renderer, type PreparedChart } from './render/renderer'
+import { DARK_FRAME, prepareChart, Renderer, type FrameColors, type PreparedChart } from './render/renderer'
 
 export interface PlayerOptions {
   /** In-game tap speed setting, 1.0 .. 10.0. Default 7.5. */
@@ -20,6 +20,8 @@ export interface PlayerOptions {
   showSlideJudge?: boolean
   /** With showSlideJudge, mark the steps that must be touched in orange. Default false. */
   showMustTouch?: boolean
+  /** Colours around the round field, e.g. a transparent background on a light page. Default dark. */
+  frame?: FrameColors
   /** Play synthesised hit sounds. Default true. */
   hitSounds?: boolean
   /** Hit sound volume, 0..1. Default 0.5. */
@@ -93,6 +95,7 @@ export class SimaiPlayer {
   private showSensors: boolean
   private showSlideJudge: boolean
   private showMustTouch: boolean
+  private frameColors: FrameColors
   private sounds = new HitSoundPlayer()
   private noteColors: Map<string, string> | null = null
   private frame = 0
@@ -118,6 +121,7 @@ export class SimaiPlayer {
     this.showSensors = options.showSensors ?? false
     this.showSlideJudge = options.showSlideJudge ?? false
     this.showMustTouch = options.showMustTouch ?? false
+    this.frameColors = options.frame ?? DARK_FRAME
     this.sounds.enabled = options.hitSounds ?? true
     this.sounds.volume = options.hitSoundVolume ?? 0.5
     this._musicVolume = clamp01(options.musicVolume ?? 1)
@@ -332,6 +336,12 @@ export class SimaiPlayer {
     this.dirty = true
   }
 
+  /** Change the colours around the field, e.g. when the page switches between light and dark. */
+  setFrame(frame: FrameColors) {
+    this.frameColors = frame
+    this.dirty = true
+  }
+
   /** Show or hide the touch sensor overlay. */
   setShowSensors(enabled: boolean) {
     this.showSensors = enabled
@@ -481,6 +491,7 @@ export class SimaiPlayer {
       showSensors: this.showSensors,
       showSlideJudge: this.showSlideJudge,
       showMustTouch: this.showMustTouch,
+      frame: this.frameColors,
     })
     for (const l of this.listeners) l(now)
   }
