@@ -35,6 +35,7 @@ const player = new SimaiPlayer(canvas, {
   fireworks: true,
   hitSounds: true,
   hitSoundVolume: 0.5,
+  musicVolume: 1,         // iOS ignores it: the device's buttons set the volume there
 })
 await player.load({
   maidata: parseMaidata(await (await fetch('maidata.txt')).text()),
@@ -46,6 +47,8 @@ player.seek(42.5)
 player.setRate(0.5)       // half speed, pitch kept
 player.setFireworks(false) // hide the burst of `f` touches
 player.setHitSounds(true, 0.3)
+player.setHitSoundVolume(0.8)
+player.setMusicVolume(0.6)
 player.setHitSoundPreset('wood') // sound sets: HIT_SOUND_PRESETS (classic, wood, chip, crisp, marimba)
 player.previewHitSound('break')  // audition one sound
 // the user's own hit sound files (e.g. from <input type="file" webkitdirectory>): recognised by

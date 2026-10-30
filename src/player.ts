@@ -24,6 +24,8 @@ export interface PlayerOptions {
   hitSounds?: boolean
   /** Hit sound volume, 0..1. Default 0.5. */
   hitSoundVolume?: number
+  /** Music volume, 0..1. Default 1. Browsers that keep the volume to the device (iOS) ignore it. */
+  musicVolume?: number
   /** Hit sound set, an id from HIT_SOUND_PRESETS. Default 'classic'. */
   hitSoundPreset?: string
   /** Restore the hit sound pack the user loaded last time (kept in this browser). Default true. */
@@ -81,6 +83,7 @@ export class SimaiPlayer {
   private renderer: Renderer
   private clock: Clock | null = null
   private ownsAudio = false
+  private _musicVolume = 1
   private prepared: PreparedChart | null = null
   private _first = 0
   private _chart: Chart | null = null
@@ -117,6 +120,7 @@ export class SimaiPlayer {
     this.showMustTouch = options.showMustTouch ?? false
     this.sounds.enabled = options.hitSounds ?? true
     this.sounds.volume = options.hitSoundVolume ?? 0.5
+    this._musicVolume = clamp01(options.musicVolume ?? 1)
     if (options.hitSoundPreset) this.sounds.preset = options.hitSoundPreset
     this.hitSoundPackRestored =
       (options.restoreHitSoundPack ?? true)
@@ -180,6 +184,7 @@ export class SimaiPlayer {
       const audio = typeof options.audio === 'string' ? new Audio(options.audio) : options.audio
       this.ownsAudio = typeof options.audio === 'string'
       audio.preload = 'auto'
+      audio.volume = this._musicVolume
       if (!(audio.readyState >= HTMLMediaElement.HAVE_METADATA)) {
         await new Promise<void>((resolve, reject) => {
           audio.addEventListener('loadedmetadata', () => resolve(), { once: true })
@@ -371,6 +376,29 @@ export class SimaiPlayer {
     if (enabled && this.playing) this.sounds.unlock()
   }
 
+  /** Hit sound volume, 0..1. */
+  get hitSoundVolume(): number {
+    return this.sounds.volume
+  }
+
+  setHitSoundVolume(volume: number) {
+    this.sounds.volume = volume
+  }
+
+  /** Music volume, 0..1. */
+  get musicVolume(): number {
+    return this._musicVolume
+  }
+
+  /**
+   * Set the music volume (0..1). It carries over to audio loaded later. iOS keeps the
+   * volume of media to the device's buttons, so there it has no effect.
+   */
+  setMusicVolume(volume: number) {
+    this._musicVolume = clamp01(volume)
+    if (this.clock instanceof MediaClock) this.clock.audio.volume = this._musicVolume
+  }
+
   /** Id of the hit sound set in use. */
   get hitSoundPreset(): string {
     return this.sounds.preset
@@ -530,4 +558,8 @@ export class SimaiPlayer {
     }
     scrub.shown = Math.abs(gap) < 0.0005 ? scrub.target : scrub.shown + gap * (1 - Math.exp(-dt / SCRUB_SMOOTHING))
   }
+}
+
+function clamp01(v: number) {
+  return Math.min(Math.max(v, 0), 1)
 }
